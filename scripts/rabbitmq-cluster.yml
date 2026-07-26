@@ -1,0 +1,61 @@
+# RabbitMQ 两节点集群（Docker Compose）
+# 用法：
+#   docker compose -f scripts/rabbitmq-cluster.yml up -d
+#   管理后台：http://localhost:15672 / http://localhost:15673
+#   默认账号密码：guest / guest
+#
+# 集群原理：
+#   - rabbit@mq1 作为 disc 节点先启动
+#   - rabbit@mq2 以 ram 节点身份加入 mq1
+#   - 两者共享同一个 Erlang Cookie，才能互相认证
+
+services:
+  mq1:
+    image: rabbitmq:3.13-management
+    hostname: mq1
+    container_name: mq1
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+      RABBITMQ_ERLANG_COOKIE: "MQDESK_CLUSTER_COOKIE_2026"
+    volumes:
+      - mq1-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mq2:
+    image: rabbitmq:3.13-management
+    hostname: mq2
+    container_name: mq2
+    ports:
+      - "5673:5672"
+      - "15673:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+      RABBITMQ_ERLANG_COOKIE: "MQDESK_CLUSTER_COOKIE_2026"
+    volumes:
+      - mq2-data:/var/lib/rabbitmq
+    depends_on:
+      mq1:
+        condition: service_healthy
+    command: >
+      sh -c "
+        rabbitmq-server &
+        sleep 10 &&
+        rabbitmqctl stop_app &&
+        rabbitmqctl reset &&
+        rabbitmqctl join_cluster rabbit@mq1 &&
+        rabbitmqctl start_app &&
+        tail -f /var/log/rabbitmq/log.log
+      "
+
+volumes:
+  mq1-data:
+  mq2-data:

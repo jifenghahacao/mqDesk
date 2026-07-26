@@ -1,0 +1,43 @@
+# === Tauri / Rust ===
+src-tauri/target/
+src-tauri/Cargo.lock
+*.rs.bk
+
+# === Node / Vite ===
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+
+# === 测试覆盖率 ===
+coverage/
+
+# === IDE ===
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# === 运行时数据 ===
+*.log
+logs/
+mqdesk.db*
+
+# === 操作系统 ===
+Thumbs.db
+
+# === Python 缓存 ===
+**/__pycache__/
+*.pyc
+.pytest_cache/
+
+# === 临时截图 / 构建产物 ===
+tmp/
+tmp-screenshot.png
+
+# === Linux 离线依赖包（体积过大，单独分发）===
+apk/linux-offline/
+
+# === 旧项目归档（不参与构建）===
+legacy/

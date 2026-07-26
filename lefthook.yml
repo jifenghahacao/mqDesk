@@ -1,0 +1,11 @@
+pre-commit:
+  parallel: false
+  commands:
+    lint:
+      run: python tooling/checks.py lint --profile precommit --files {staged_files}
+    typecheck:
+      run: python tooling/checks.py typecheck --profile precommit --files {staged_files}
+    unit-tests:
+      run: npm test
+    rust-tests:
+      run: cd src-tauri && cargo test

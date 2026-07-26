@@ -1,0 +1,39 @@
+[package]
+name = "mqdesk"
+version = "0.1.0"
+description = "MQDesk — RabbitMQ 可视化管控台（小白友好的桌面工具）"
+authors = ["MQDesk"]
+edition = "2021"
+rust-version = "1.77"
+
+[workspace]
+members = ["crates/core"]
+
+[lib]
+name = "mqdesk_lib"
+crate-type = ["staticlib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.0", features = [] }
+
+[dependencies]
+tauri = { version = "2.1", features = ["tray-icon"] }
+tauri-plugin-shell = "2.0"
+mqdesk-core = { path = "crates/core" }
+log = "0.4"
+env_logger = "0.11"
+image = { version = "0.25", default-features = false, features = ["png"] }
+whoami = "1.5"
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+[profile.dev]
+incremental = true
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

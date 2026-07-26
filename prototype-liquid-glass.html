@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MQDesk — RabbitMQ 可视化管控台（原型）</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* === Design System Tokens (Liquid Glass, 辅助色已替换为青绿以规避紫色) === */
+:root{
+  --bg-base:#eef1f8;
+  --bg-halo-1:#cfe0ff; --bg-halo-2:#c7f0e8; --bg-halo-3:#ffe3da;
+  --ink-900:#1b2230; --ink-600:#565f73; --ink-400:#6a7388; --ink-on-accent:#ffffff;
+  --primary:#2f7ff2; --primary-soft:#e2edff; --accent:#12b5a6; --accent-soft:#d6f3ee;
+  --ok:#1fa971; --warn:#e8a33d; --danger:#e5484d; --idle:#9aa3b2; --info:#2f7ff2;
+  --glass:rgba(255,255,255,0.62); --glass-strong:rgba(255,255,255,0.82);
+  --glass-border:rgba(255,255,255,0.75); --hairline:rgba(27,34,48,0.08);
+  --r-sm:10px; --r-md:14px; --r-lg:20px; --r-pill:999px;
+  --s-1:4px; --s-2:8px; --s-3:12px; --s-4:16px; --s-5:24px; --s-6:32px; --s-7:48px; --s-8:64px;
+  --sh-1:0 2px 8px rgba(27,34,48,0.06);
+  --sh-2:0 8px 24px rgba(27,34,48,0.10);
+  --sh-3:0 16px 48px rgba(27,34,48,0.14);
+  --sh-accent:0 8px 24px rgba(47,127,242,0.28);
+  --ring:0 0 0 3px rgba(47,127,242,0.30);
+  --font-display:"Plus Jakarta Sans","Microsoft YaHei",system-ui,sans-serif;
+  --font-body:"Plus Jakarta Sans","Microsoft YaHei",system-ui,sans-serif;
+  --font-mono:"DM Mono","JetBrains Mono",ui-monospace,monospace;
+}
+/* === Reset === */
+*{box-sizing:border-box;margin:0;padding:0;}
+html,body{height:100%;}
+body{
+  font-family:var(--font-body);
+  color:var(--ink-900);
+  background:
+    radial-gradient(1200px 800px at 15% 10%, #d9e4fb 0%, transparent 55%),
+    radial-gradient(1000px 700px at 90% 90%, #d7f1ea 0%, transparent 55%),
+    linear-gradient(135deg,#e9eef8 0%, #eef1f8 55%, #e7eefa 100%);
+  -webkit-font-smoothing:antialiased;
+  display:flex; align-items:center; justify-content:center;
+  padding:var(--s-6);
+  font-size:14px; line-height:1.6;
+}
+button{font-family:inherit; cursor:pointer; border:none; background:none; color:inherit;}
+:focus-visible{outline:none; box-shadow:var(--ring); border-radius:var(--r-sm);}
+
+/* === Window shell === */
+.window{
+  width:min(1180px,100%); height:min(760px,92vh);
+  background:var(--bg-base);
+  border-radius:var(--r-md);
+  box-shadow:var(--sh-3);
+  overflow:hidden; position:relative;
+  display:flex; flex-direction:column;
+  border:1px solid var(--glass-border);
+}
+.halo{position:absolute; border-radius:50%; filter:blur(90px); opacity:.55; pointer-events:none; z-index:0;}
+.halo.h1{width:420px;height:420px;background:var(--bg-halo-1);top:-120px;left:-80px;}
+.halo.h2{width:380px;height:380px;background:var(--bg-halo-2);bottom:-120px;right:-60px;}
+.halo.h3{width:300px;height:300px;background:var(--bg-halo-3);top:40%;left:45%;opacity:.4;}
+
+/* === Title bar === */
+.titlebar{
+  position:relative; z-index:5;
+  height:46px; flex:0 0 46px;
+  background:var(--glass-strong);
+  backdrop-filter:blur(30px) saturate(180%); -webkit-backdrop-filter:blur(30px) saturate(180%);
+  border-bottom:1px solid var(--hairline);
+  display:flex; align-items:center; padding:0 var(--s-4);
+  gap:var(--s-3);
+}
+.brand{display:flex; align-items:center; gap:var(--s-3); font-weight:700; font-size:15px; letter-spacing:.2px;}
+.brand .logo{
+  width:26px;height:26px;border-radius:8px;
+  background:linear-gradient(135deg,var(--primary),var(--accent));
+  display:grid;place-items:center;color:#fff;font-weight:800;font-size:14px;
+  box-shadow:var(--sh-accent);
+}
+.brand .sub{font-weight:500;color:var(--ink-400);font-size:12px;}
+.win-controls{margin-left:auto; display:flex; gap:var(--s-2);}
+.win-controls button{
+  width:34px;height:30px;border-radius:8px;color:var(--ink-600);
+  display:grid;place-items:center; transition:.18s;
+}
+.win-controls button:hover{background:rgba(27,34,48,0.06);}
+.win-controls .close:hover{background:var(--danger);color:#fff;}
+
+/* === Body layout === */
+.body{position:relative; z-index:2; flex:1; display:flex; min-height:0;}
+.sidebar{
+  width:212px; flex:0 0 212px;
+  background:var(--glass);
+  backdrop-filter:blur(22px) saturate(165%); -webkit-backdrop-filter:blur(22px) saturate(165%);
+  border-right:1px solid var(--hairline);
+  padding:var(--s-5) var(--s-3);
+  display:flex; flex-direction:column; gap:var(--s-2);
+}
+.nav-label{font-size:11px; letter-spacing:.12em; color:var(--ink-400); padding:0 var(--s-3) var(--s-1); text-transform:uppercase;}
+.nav-item{
+  display:flex; align-items:center; gap:var(--s-3);
+  padding:var(--s-3) var(--s-3); border-radius:var(--r-sm);
+  color:var(--ink-600); font-weight:600; font-size:14px;
+  position:relative; transition:.18s; min-height:44px; text-align:left; width:100%;
+}
+.nav-item .ico{width:20px;height:20px;flex:0 0 20px;color:var(--ink-400);}
+.nav-item:hover{background:rgba(27,34,48,0.05); color:var(--ink-900);}
+.nav-item:hover .ico{color:var(--ink-600);}
+.nav-item.active{background:var(--primary-soft); color:var(--primary);}
+.nav-item.active .ico{color:var(--primary);}
+.nav-item.active::before{content:"";position:absolute;left:0;top:50%;transform:translateY(-50%);width:3px;height:22px;background:var(--primary);border-radius:0 3px 3px 0;}
+.nav-item .badge{margin-left:auto;background:var(--warn);color:#fff;font-size:11px;font-weight:700;border-radius:var(--r-pill);padding:1px 7px;}
+.sidebar .spacer{flex:1;}
+.conn-chip{
+  background:var(--glass-strong);border:1px solid var(--hairline);border-radius:var(--r-sm);
+  padding:var(--s-3);font-size:12px;color:var(--ink-600);
+}
+.conn-chip b{color:var(--ink-900);display:block;font-size:13px;margin-bottom:2px;}
+.conn-chip .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--ok);margin-right:5px;}
+
+.content{flex:1; overflow-y:auto; padding:var(--s-6); position:relative;}
+.view{display:none; animation:fade .2s ease;}
+.view.active{display:block;}
+@keyframes fade{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
+
+/* === Page header === */
+.page-head{display:flex; align-items:flex-end; justify-content:space-between; gap:var(--s-4); margin-bottom:var(--s-5); flex-wrap:wrap;}
+.page-head h1{font-size:28px; font-weight:800; letter-spacing:.2px; font-family:var(--font-display);}
+.page-head p{color:var(--ink-400); font-size:13px; margin-top:2px;}
+.page-head .actions{display:flex; gap:var(--s-2);}
+
+/* === Glass card === */
+.card{
+  background:var(--glass); backdrop-filter:blur(22px) saturate(165%); -webkit-backdrop-filter:blur(22px) saturate(165%);
+  border:1px solid var(--glass-border); border-radius:var(--r-lg);
+  box-shadow:var(--sh-1); transition:.2s ease; padding:var(--s-5);
+}
+.card.hover:hover{box-shadow:var(--sh-2); transform:translateY(-2px);}
+
+/* === Buttons === */
+.btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:var(--s-2);
+  height:40px; padding:0 var(--s-5); border-radius:var(--r-sm);
+  font-weight:600; font-size:14px; transition:.18s; min-height:44px;
+}
+.btn.sm{height:34px;padding:0 var(--s-4);font-size:13px;}
+.btn.lg{height:48px;padding:0 var(--s-6);font-size:15px;}
+.btn.primary{background:var(--primary); color:#fff; box-shadow:var(--sh-accent);}
+.btn.primary:hover{filter:brightness(1.06); box-shadow:var(--sh-accent);}
+.btn.primary:active{transform:translateY(1px);}
+.btn.secondary{background:var(--glass-strong); color:var(--ink-900); border:1px solid var(--hairline);}
+.btn.secondary:hover{background:#fff;}
+.btn.ghost{color:var(--primary);}
+.btn.ghost:hover{background:var(--primary-soft);}
+.btn.danger{background:var(--danger); color:#fff;}
+.btn.danger:hover{filter:brightness(1.05);}
+.btn:disabled{background:var(--idle); opacity:.5; cursor:not-allowed; box-shadow:none;}
+
+/* === Health banner === */
+.banner{
+  display:flex; align-items:center; gap:var(--s-4);
+  border-radius:var(--r-lg); padding:var(--s-5) var(--s-6);
+  background:var(--glass-strong); border:1px solid var(--glass-border);
+  box-shadow:var(--sh-2); margin-bottom:var(--s-5);
+}
+.banner .status-dot{width:18px;height:18px;border-radius:50%;flex:0 0 18px;}
+.banner.warn{background:linear-gradient(120deg,rgba(232,163,61,0.16),rgba(255,255,255,0.6));}
+.banner.ok{background:linear-gradient(120deg,rgba(31,169,113,0.14),rgba(255,255,255,0.6));}
+.banner h2{font-size:18px;font-weight:800;}
+.banner p{color:var(--ink-600);font-size:13px;margin-top:2px;}
+.banner .grow{flex:1;}
+
+/* === Stat grid === */
+.stat-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:var(--s-4); margin-bottom:var(--s-5);}
+.stat{
+  background:var(--glass); backdrop-filter:blur(22px) saturate(165%); -webkit-backdrop-filter:blur(22px) saturate(165%);
+  border:1px solid var(--glass-border); border-radius:var(--r-lg); padding:var(--s-5);
+  box-shadow:var(--sh-1); transition:.2s; cursor:pointer; text-align:left; width:100%;
+}
+.stat:hover{box-shadow:var(--sh-2); transform:translateY(-2px);}
+.stat .label{color:var(--ink-400); font-size:13px; display:flex; align-items:center; gap:6px;}
+.stat .num{font-family:var(--font-mono); font-size:32px; font-weight:500; margin-top:var(--s-2); letter-spacing:-1px;}
+.stat .meta{font-size:12px; color:var(--ink-600); margin-top:2px;}
+.stat.alert .num{color:var(--warn);}
+
+/* === Two-column === */
+.cols{display:grid; grid-template-columns:1fr 1fr; gap:var(--s-4);}
+.col-title{display:flex; align-items:center; justify-content:space-between; margin-bottom:var(--s-3);}
+.col-title h3{font-size:15px; font-weight:700;}
+.col-title .link{color:var(--primary); font-size:13px; font-weight:600;}
+
+/* === List rows === */
+.list{display:flex; flex-direction:column; gap:var(--s-2);}
+.row{
+  display:flex; align-items:center; gap:var(--s-3);
+  padding:var(--s-3) var(--s-4); border-radius:var(--r-sm);
+  background:rgba(255,255,255,0.45); border:1px solid transparent; transition:.18s; min-height:44px;
+}
+.row:hover{background:var(--primary-soft); cursor:pointer;}
+.row .name{font-weight:600; font-family:var(--font-mono); font-size:13px;}
+.row .desc{color:var(--ink-400); font-size:12px;}
+.row .grow{flex:1;}
+.alert-row .name{color:var(--ink-900);}
+
+/* === Health dot + badge === */
+.dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex:0 0 9px;}
+.dot.ok{background:var(--ok);} .dot.warn{background:var(--warn);} .dot.danger{background:var(--danger);} .dot.idle{background:var(--idle);}
+.badge-pill{display:inline-flex; align-items:center; gap:7px; padding:4px 12px; border-radius:var(--r-pill); font-size:12px; font-weight:700; border:1px solid transparent;}
+.badge-pill.ok{background:rgba(31,169,113,0.12); color:var(--ok);}
+.badge-pill.warn{background:rgba(232,163,61,0.15); color:#b9791f;}
+.badge-pill.danger{background:rgba(229,72,77,0.12); color:var(--danger);}
+.badge-pill.idle{background:rgba(154,163,178,0.16); color:var(--ink-600);}
+.status-pill{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;border-radius:var(--r-pill);font-size:12px;font-weight:700;}
+.status-pill.s-sent{background:var(--primary-soft);color:var(--primary);}
+.status-pill.s-consumed{background:rgba(31,169,113,0.12);color:var(--ok);}
+.status-pill.s-backlog{background:rgba(232,163,61,0.15);color:#b9791f;}
+.status-pill.s-fail{background:rgba(229,72,77,0.12);color:var(--danger);}
+
+/* === Term tooltip === */
+.term{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:16px;height:16px;border-radius:50%;background:var(--primary-soft);color:var(--primary);
+  font-size:11px;font-weight:700;margin-left:5px;position:relative;vertical-align:middle;
+}
+.term:hover,.term:focus{background:var(--primary);color:#fff;}
+.term .tip{
+  position:absolute; bottom:140%; left:50%; transform:translateX(-50%) translateY(4px);
+  width:240px; background:#fff; color:var(--ink-600); font-size:12px; font-weight:500; line-height:1.5;
+  padding:var(--s-3); border-radius:var(--r-sm); box-shadow:var(--sh-2);
+  opacity:0; visibility:hidden; transition:.18s; z-index:50; text-align:left; white-space:normal;
+}
+.term:hover .tip,.term:focus .tip{opacity:1; visibility:visible; transform:translateX(-50%) translateY(0);}
+.term .tip b{color:var(--ink-900);}
+
+/* === Table === */
+.tbl{width:100%; border-collapse:collapse; font-size:13px;}
+.tbl th{text-align:left; color:var(--ink-400); font-weight:600; font-size:12px; padding:var(--s-3) var(--s-4); border-bottom:1px solid var(--hairline);}
+.tbl td{padding:var(--s-3) var(--s-4); border-bottom:1px solid var(--hairline);}
+.tbl tr:last-child td{border-bottom:none;}
+.tbl tbody tr{transition:.15s;}
+.tbl tbody tr:hover{background:var(--primary-soft);}
+.mono{font-family:var(--font-mono);}
+
+/* === Queue detail metrics === */
+.metrics{display:grid; grid-template-columns:repeat(4,1fr); gap:var(--s-4); margin:var(--s-5) 0;}
+.metric{background:rgba(255,255,255,0.5); border:1px solid var(--hairline); border-radius:var(--r-md); padding:var(--s-4) var(--s-5);}
+.metric .k{color:var(--ink-400); font-size:12px;}
+.metric .v{font-family:var(--font-mono); font-size:26px; font-weight:500; margin-top:4px;}
+.metric .v small{font-size:13px;color:var(--ink-400);font-weight:400;}
+
+/* === Form === */
+.field{margin-bottom:var(--s-5);}
+.field > label{display:flex; align-items:center; font-weight:600; font-size:13px; margin-bottom:var(--s-2);}
+.field .hint{color:var(--ink-400); font-size:12px; margin-top:6px;}
+.input, .select, .textarea{
+  width:100%; padding:var(--s-3) var(--s-4); border-radius:var(--r-sm);
+  border:1px solid var(--hairline); background:rgba(255,255,255,0.7); color:var(--ink-900);
+  font-family:inherit; font-size:14px; transition:.18s;
+}
+.textarea{font-family:var(--font-mono); font-size:13px; min-height:140px; resize:vertical; line-height:1.5;}
+.input:focus, .select:focus, .textarea:focus{border-color:var(--primary); box-shadow:var(--ring); outline:none;}
+.input.err{border-color:var(--danger);}
+.seg{display:inline-flex; background:rgba(27,34,48,0.05); border-radius:var(--r-sm); padding:4px; gap:4px;}
+.seg button{padding:8px 16px; border-radius:8px; font-weight:600; font-size:13px; color:var(--ink-600); transition:.18s; min-height:36px;}
+.seg button.on{background:var(--primary-soft); color:var(--primary);}
+.predict{
+  display:flex; align-items:center; gap:8px; margin-top:var(--s-3);
+  background:var(--accent-soft); border:1px solid rgba(18,181,166,0.3); color:#0c7a6f;
+  border-radius:var(--r-sm); padding:var(--s-3) var(--s-4); font-size:13px; font-weight:600;
+}
+
+/* === Overlays === */
+.scrim{position:fixed; inset:0; background:rgba(27,34,48,0.28); backdrop-filter:blur(3px); z-index:80; display:none;}
+.scrim.show{display:block; animation:fade .2s ease;}
+.modal{
+  position:fixed; z-index:90; left:50%; top:50%; transform:translate(-50%,-50%) scale(.98);
+  width:min(520px,92vw); background:var(--glass-strong); backdrop-filter:blur(30px) saturate(180%);
+  -webkit-backdrop-filter:blur(30px) saturate(180%);
+  border:1px solid var(--glass-border); border-radius:var(--r-lg); box-shadow:var(--sh-3);
+  padding:var(--s-6); display:none;
+}
+.modal.show{display:block; animation:pop .2s ease;}
+@keyframes pop{from{opacity:0;transform:translate(-50%,-50%) scale(.96);}to{opacity:1;transform:translate(-50%,-50%) scale(1);}}
+.modal h3{font-size:18px; font-weight:800; margin-bottom:var(--s-2);}
+.modal .warn-note{display:flex; gap:8px; align-items:flex-start; background:rgba(229,72,77,0.08); border:1px solid rgba(229,72,77,0.25); color:#a8262b; border-radius:var(--r-sm); padding:var(--s-3); font-size:13px; margin:var(--s-4) 0;}
+.wn-ic{flex:0 0 18px;width:18px;height:18px;border-radius:50%;background:var(--danger);color:#fff;font-weight:800;font-size:12px;display:grid;place-items:center;}
+.modal .actions{display:flex; justify-content:flex-end; gap:var(--s-2); margin-top:var(--s-5);}
+
+/* Toast */
+.toast-wrap{position:fixed; top:18px; left:50%; transform:translateX(-50%); z-index:120; display:flex; flex-direction:column; gap:var(--s-2); align-items:center;}
+.toast{
+  display:flex; align-items:center; gap:var(--s-3); background:var(--glass-strong);
+  backdrop-filter:blur(20px); border:1px solid var(--glass-border); border-radius:var(--r-pill);
+  padding:10px 18px; box-shadow:var(--sh-2); font-weight:600; font-size:14px; animation:slidein .2s ease;
+}
+.toast .ic{width:20px;height:20px;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:12px;font-weight:800;}
+.toast.ok .ic{background:var(--ok);} .toast.fail .ic{background:var(--danger);} .toast.info .ic{background:var(--primary);}
+@keyframes slidein{from{opacity:0;transform:translateY(-10px);}to{opacity:1;transform:none;}}
+
+/* misc */
+.muted{color:var(--ink-400);}
+.spin{width:15px;height:15px;border:2px solid rgba(255,255,255,.5);border-top-color:#fff;border-radius:50%;animation:rot .7s linear infinite;display:inline-block;}
+@keyframes rot{to{transform:rotate(360deg);}}
+.divider{height:1px;background:var(--hairline);margin:var(--s-5) 0;}
+.flex{display:flex;align-items:center;gap:var(--s-3);}
+.filters{display:flex;gap:var(--s-2);flex-wrap:wrap;margin-bottom:var(--s-4);}
+.chip{height:36px;padding:0 14px;border-radius:var(--r-pill);background:rgba(255,255,255,0.55);border:1px solid var(--hairline);font-size:13px;font-weight:600;color:var(--ink-600);transition:.18s;}
+.chip.on{background:var(--primary-soft);color:var(--primary);border-color:transparent;}
+.seg button:hover{background:rgba(27,34,48,0.06);}
+.chip:hover{background:rgba(27,34,48,0.07);}
+.empty{padding:var(--s-7);text-align:center;color:var(--ink-400);}
+.tag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:var(--r-pill);background:var(--accent-soft);color:#0c7a6f;}
+
+/* === 键盘可达 / skip-link / 连接骨架屏 === */
+.card.hover:focus-visible,.alert-row:focus-visible,.tbl tbody tr:focus-visible{outline:none;box-shadow:var(--ring);border-radius:var(--r-sm);}
+.link{color:var(--primary);font-size:13px;font-weight:600;cursor:pointer;}
+.link:focus-visible{outline:none;box-shadow:var(--ring);border-radius:var(--r-pill);padding:0 4px;}
+.skip-link{position:absolute;left:var(--s-4);top:-52px;z-index:200;background:var(--primary);color:#fff;font-weight:600;font-size:13px;padding:9px 14px;border-radius:var(--r-sm);transition:.18s;text-decoration:none;}
+.skip-link:focus{top:var(--s-4);}
+.connecting{position:absolute;inset:0;z-index:30;background:var(--bg-base);display:none;flex-direction:column;padding:var(--s-6);gap:var(--s-5);}
+.connecting.show{display:flex;animation:fade .2s ease;}
+.connecting .c-title{width:200px;height:20px;border-radius:var(--r-pill);}
+.connecting .c-banner{height:72px;border-radius:var(--r-lg);width:100%;}
+.connecting .c-row{display:flex;gap:var(--s-4);}
+.connecting .c-card{flex:1;height:96px;border-radius:var(--r-lg);}
+.connecting .c-status{display:flex;align-items:center;gap:var(--s-3);color:var(--ink-600);font-weight:600;font-size:14px;margin-top:var(--s-3);}
+.sk{background:linear-gradient(100deg,rgba(255,255,255,.45) 30%,rgba(255,255,255,.8) 50%,rgba(255,255,255,.45) 70%);background-size:200% 100%;animation:shimmer 1.2s linear infinite;border-radius:var(--r-md);}
+@keyframes shimmer{to{background-position:-200% 0;}}
+
+/* Responsive */
+@media (max-width:880px){
+  .stat-grid{grid-template-columns:repeat(2,1fr);}
+  .cols{grid-template-columns:1fr;}
+  .metrics{grid-template-columns:repeat(2,1fr);}
+  .sidebar{width:64px;}
+  .nav-item span.txt{display:none;}
+  .nav-label{display:none;}
+  .conn-chip{display:none;}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation:none!important; transition:none!important;}
+}
+</style>
+</head>
+<body>
+<a href="#mainContent" class="skip-link">跳到主内容</a>
+<div class="window" role="application" aria-label="MQDesk 桌面客户端">
+  <div class="halo h1"></div><div class="halo h2"></div><div class="halo h3"></div>
+
+  <!-- Title bar -->
+  <header class="titlebar">
+    <div class="brand"><span class="logo">M</span> MQDesk <span class="sub">RabbitMQ 可视化管控台</span></div>
+    <div class="win-controls">
+      <button aria-label="最小化" title="最小化"><svg width="12" height="12" viewBox="0 0 12 12"><rect y="9" width="12" height="2" rx="1" fill="currentColor"/></svg></button>
+      <button aria-label="最大化" title="最大化"><svg width="12" height="12" viewBox="0 0 12 12"><rect x="1" y="1" width="10" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.4"/></svg></button>
+      <button class="close" aria-label="关闭" title="关闭"><svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 2 L10 10 M10 2 L2 10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></button>
+    </div>
+  </header>
+
+  <div class="body">
+    <!-- Sidebar -->
+    <nav class="sidebar" aria-label="主导航">
+      <div class="nav-label">工作区</div>
+      <button class="nav-item" data-nav="connect"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M5 12h14M12 5a7 7 0 010 14" stroke-linecap="round"/></svg><span class="txt">连接</span></button>
+      <button class="nav-item active" data-nav="overview"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg><span class="txt">总览</span></button>
+      <button class="nav-item" data-nav="queues"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 7h16M4 12h16M4 17h16" stroke-linecap="round"/></svg><span class="txt">队列</span></button>
+      <button class="nav-item" data-nav="messages"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16v11H8l-4 4z" stroke-linejoin="round"/></svg><span class="txt">消息</span></button>
+      <div class="nav-label" style="margin-top:8px;">系统</div>
+      <button class="nav-item" data-nav="settings"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3" stroke-linecap="round"/></svg><span class="txt">设置</span></button>
+      <div class="spacer"></div>
+      <div class="conn-chip"><span class="dot"></span><b>本地开发</b>localhost:5672 · 已连接</div>
+    </nav>
+
+    <!-- Content -->
+    <main class="content" id="mainContent" tabindex="-1">
+
+      <!-- ============ 总览 ============ -->
+      <section class="view active" data-view="overview" aria-label="总览仪表盘">
+        <div class="page-head">
+          <div><h1>总览</h1><p>一眼掌握当前 RabbitMQ 节点的健康状况</p></div>
+          <div class="actions"><button class="btn secondary sm" onclick="go('queues')">查看队列</button></div>
+        </div>
+
+        <div class="banner warn">
+          <span class="status-dot warn"></span>
+          <div><h2>2 个队列需要关注</h2><p>1 个队列消息堆积 · 1 个队列无人消费 · 其余运行正常</p></div>
+          <div class="grow"></div>
+          <button class="btn secondary sm" onclick="go('queues')">去处理</button>
+        </div>
+
+        <div class="stat-grid">
+          <button class="stat" onclick="go('queues')"><div class="label">队列总数</div><div class="num">6</div><div class="meta">其中 2 个异常</div></button>
+          <button class="stat"><div class="label">交换机总数</div><div class="num">5</div><div class="meta">含默认交换机</div></button>
+          <button class="stat"><div class="label">消息总数</div><div class="num">3,198</div><div class="meta">Ready + 处理中</div></button>
+          <button class="stat alert" onclick="go('queues')"><div class="label">当前告警</div><div class="num">2</div><div class="meta">堆积 1 · 无人消费 1</div></button>
+        </div>
+
+        <div class="cols">
+          <div class="card">
+            <div class="col-title"><h3>需要关注的队列</h3><span class="link" onclick="go('queues')">全部队列 →</span></div>
+            <div class="list">
+              <div class="row alert-row" onclick="openQueue('order_queue')"><span class="dot warn"></span><div><div class="name">order_queue</div><div class="desc">订单创建事件 · 待消费 1,240 且持续增长</div></div><div class="grow"></div><span class="badge-pill warn">堆积预警</span></div>
+              <div class="row alert-row" onclick="openQueue('pay_queue')"><span class="dot danger"></span><div><div class="name">pay_queue</div><div class="desc">支付结果回调 · 无消费者且待消费 86</div></div><div class="grow"></div><span class="badge-pill danger">无人消费</span></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="col-title"><h3>最近消息活动</h3><span class="link" onclick="go('messages')">消息通知 →</span></div>
+            <div class="list" id="overviewFeed"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 连接 ============ -->
+      <section class="view" data-view="connect" aria-label="连接管理">
+        <div class="page-head">
+          <div><h1>连接管理</h1><p>配置并保存你的 RabbitMQ 节点，密码本地加密存储</p></div>
+          <div class="actions"><button class="btn primary" onclick="openConnModal()">+ 新建连接</button></div>
+        </div>
+        <div class="cols">
+          <div class="card hover" onclick="connectTo('本地开发')" style="cursor:pointer">
+            <div class="flex" style="justify-content:space-between"><b style="font-size:16px">本地开发</b><span class="badge-pill ok"><span class="dot ok"></span>已连接</span></div>
+            <div class="muted" style="margin-top:8px;font-family:var(--font-mono);font-size:13px">amqp://localhost:5672 · vhost / · 用户 dev</div>
+            <div class="muted" style="font-size:12px;margin-top:4px">点击任意位置即可进入总览</div>
+          </div>
+          <div class="card hover" onclick="connectTo('测试环境')" style="cursor:pointer">
+            <div class="flex" style="justify-content:space-between"><b style="font-size:16px">测试环境</b><span class="badge-pill idle"><span class="dot idle"></span>未连接</span></div>
+            <div class="muted" style="margin-top:8px;font-family:var(--font-mono);font-size:13px">amqp://10.20.30.40:5672 · vhost /test · 用户 qa</div>
+            <div class="muted" style="font-size:12px;margin-top:4px">点击任意位置即可连接</div>
+          </div>
+          <div class="card hover" onclick="connectTo('预发环境')" style="cursor:pointer">
+            <div class="flex" style="justify-content:space-between"><b style="font-size:16px">预发环境</b><span class="badge-pill idle"><span class="dot idle"></span>未连接</span></div>
+            <div class="muted" style="margin-top:8px;font-family:var(--font-mono);font-size:13px">amqps://rabbit-pre.prod:5671 · vhost /pre</div>
+            <div class="muted" style="font-size:12px;margin-top:4px">点击任意位置即可连接</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 队列列表 ============ -->
+      <section class="view" data-view="queues" aria-label="队列列表">
+        <div class="page-head">
+          <div><h1>队列</h1><p>所有队列及其健康度一览</p></div>
+          <div class="actions"><button class="btn secondary sm" onclick="go('overview')">返回总览</button></div>
+        </div>
+        <div class="card" style="padding:0;overflow:hidden">
+          <table class="tbl">
+            <thead><tr><th>队列名称</th><th>待消费 <span class="term">?<span class="tip"><b>待消费 (Ready)</b>：已经躺在桶里、等着被取走的消息数。</span></span></th><th>处理中 <span class="term">?<span class="tip"><b>处理中 (Unacked)</b>：已被消费者取走、但还没确认处理完的消息数。</span></span></th><th>消费者</th><th>健康度</th><th></th></tr></thead>
+            <tbody id="queueRows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============ 队列详情 ============ -->
+      <section class="view" data-view="queue-detail" aria-label="队列详情">
+        <div class="page-head">
+          <div><h1 id="qdName" style="font-family:var(--font-mono)">order_queue</h1><p id="qdDesc">订单创建事件</p></div>
+          <div class="actions"><button class="btn secondary sm" onclick="go('queues')">← 队列列表</button></div>
+        </div>
+
+        <div class="banner" id="qdBanner">
+          <span class="status-dot warn" id="qdDot"></span>
+          <div><h2 id="qdHealth">堆积预警</h2><p id="qdSummary">待消费 1,240 且持续增长，建议检查消费端速率</p></div>
+        </div>
+
+        <div class="metrics">
+          <div class="metric"><div class="k">待消费 (Ready)</div><div class="v" id="qdReady">1,240</div></div>
+          <div class="metric"><div class="k">处理中 (Unacked)</div><div class="v" id="qdUnacked">12</div></div>
+          <div class="metric"><div class="k">消费者数</div><div class="v" id="qdCons">3</div></div>
+          <div class="metric"><div class="k">近 1 分钟速率</div><div class="v" id="qdRate">进 42 <small>/ 出 38</small></div></div>
+        </div>
+
+        <div class="card" style="margin-bottom:var(--s-5)">
+          <div class="col-title"><h3>收发速率（每 5 秒刷新）</h3><span class="tag">进 / 出</span></div>
+          <svg id="rateChart" viewBox="0 0 640 160" width="100%" height="160" preserveAspectRatio="none" aria-label="收发速率曲线"></svg>
+        </div>
+
+        <div class="card" style="padding:0;overflow:hidden">
+          <div class="col-title" style="padding:var(--s-5) var(--s-5) 0"><h3>抓取预览（不消费）<span class="term">?<span class="tip"><b>抓取预览</b>：取最新 N 条消息查看内容，消息会重新放回队列（requeue），不影响线上消费。</span></span></h3><span class="link" onclick="grabPreview()">重新抓取</span></div>
+          <table class="tbl">
+            <thead><tr><th>路由键</th><th>入队时间</th><th>大小</th><th>消息摘要</th></tr></thead>
+            <tbody id="previewRows"></tbody>
+          </table>
+        </div>
+        <div class="divider"></div>
+        <div class="flex" style="gap:var(--s-2)">
+          <button class="btn secondary sm" disabled title="P1 能力，本期原型暂未接入">● 实时监听（占位）</button>
+          <span class="muted" style="font-size:12px">实时监听为 P1 快跟能力，原型中以占位呈现</span>
+        </div>
+      </section>
+
+      <!-- ============ 消息 ============ -->
+      <section class="view" data-view="messages" aria-label="消息">
+        <div class="page-head">
+          <div><h1>消息</h1><p>引导式发送测试消息，并追踪每条消息的命运</p></div>
+        </div>
+        <div class="seg" style="margin-bottom:var(--s-5)">
+          <button class="on" data-tab="send" onclick="switchMsgTab('send',this)">发送消息</button>
+          <button data-tab="feed" onclick="switchMsgTab('feed',this)">消息通知列表</button>
+        </div>
+
+        <!-- 发送 -->
+        <div id="tab-send">
+          <div class="card">
+            <div class="field">
+              <label>发送方式</label>
+              <div class="seg">
+                <button class="on" data-mode="direct" onclick="setMode('direct',this)">直发队列</button>
+                <button data-mode="exchange" onclick="setMode('exchange',this)">经交换机 + 路由键</button>
+              </div>
+            </div>
+            <div class="field" id="targetField">
+              <label for="targetQueue">目标队列 <span class="term">?<span class="tip"><b>队列 (Queue)</b>：存消息的"桶"，消费者从这里取。</span></span></label>
+              <select class="select" id="targetQueue" onchange="updatePredict()">
+                <option>order_queue</option><option>pay_queue</option><option>notify_queue</option><option>email_queue</option><option>log_queue</option><option>scan_queue</option>
+              </select>
+            </div>
+            <div class="field" id="exField" style="display:none">
+              <label>交换机 + 路由键 <span class="term">?<span class="tip"><b>交换机 (Exchange)</b>：消息的"分拣中心"，按规则把消息送到对应队列。<b>路由键 (Routing Key)</b>：贴在消息上的"地址标签"，决定它去哪个队列。</span></span></label>
+              <div class="flex" style="gap:var(--s-2)"><input class="input" id="exName" value="order.exchange" style="flex:1" aria-label="交换机名称"><input class="input" id="exKey" value="order.created" style="flex:1" placeholder="路由键" aria-label="路由键"></div>
+            </div>
+            <div class="field">
+              <label for="msgBody">消息内容（JSON）</label>
+              <textarea class="textarea" id="msgBody">{
+  "orderId": "20260725-8841",
+  "userId": 20931,
+  "amount": 19900,
+  "item": "Pro 会员月卡"
+}</textarea>
+              <div class="hint">默认 JSON 编辑器，发送前会自动校验格式。</div>
+            </div>
+            <div class="flex" style="justify-content:space-between">
+              <button class="btn ghost sm" onclick="fillExample()">填入示例消息</button>
+              <div class="predict" id="predict">将去往：队列 <span id="predictTarget">order_queue</span></div>
+            </div>
+            <div class="divider"></div>
+            <div class="flex" style="justify-content:flex-end">
+              <button class="btn secondary" onclick="go('overview')">取消</button>
+              <button class="btn primary" id="sendBtn" onclick="sendMessage()">发送消息</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 通知列表 -->
+        <div id="tab-feed" style="display:none">
+          <div class="filters" id="feedFilters">
+            <button class="chip on" data-f="all" onclick="setFeedFilter('all',this)">全部</button>
+            <button class="chip" data-f="sent" onclick="setFeedFilter('sent',this)">已发送</button>
+            <button class="chip" data-f="consumed" onclick="setFeedFilter('consumed',this)">已被消费</button>
+            <button class="chip" data-f="backlog" onclick="setFeedFilter('backlog',this)">仍堆积</button>
+            <button class="chip" data-f="fail" onclick="setFeedFilter('fail',this)">消费失败</button>
+          </div>
+          <div class="card" style="padding:0;overflow:hidden">
+            <table class="tbl">
+              <thead><tr><th>时间</th><th>方向</th><th>目标队列</th><th>状态</th><th>消息摘要</th></tr></thead>
+              <tbody id="feedRows"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============ 设置 ============ -->
+      <section class="view" data-view="settings" aria-label="设置">
+        <div class="page-head"><div><h1>设置</h1><p>阈值、刷新频率与术语表</p></div></div>
+        <div class="card" style="max-width:560px">
+          <div class="field"><label for="setLang">界面语言</label><input class="input" id="setLang" value="简体中文（v1 锁定）" disabled></div>
+          <div class="field"><label for="setThr">堆积预警阈值（Ready 条数）</label><input class="input" id="setThr" value="1000" type="number"><div class="hint">超过该值且持续增长，标记为「堆积预警」。</div></div>
+          <div class="field"><label for="setFreq">速率刷新频率（秒）</label><input class="input" id="setFreq" value="5" type="number"></div>
+          <div class="divider"></div>
+          <div class="field" style="margin-bottom:0"><label>术语表（中文映射）</label>
+            <div class="muted" style="font-size:13px;line-height:1.9">
+              Broker 消息服务节点 · Virtual Host 虚拟空间 · Exchange 交换机 · Binding 绑定规则 · Routing Key 路由键 · Queue 队列 · Ready 待消费 · Unacked 处理中 · Ack 消费确认 · Consumer 消费者 · Dead Letter 死信
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <!-- 连接中骨架屏 -->
+    <div class="connecting" id="connecting" aria-live="polite">
+      <div class="c-title sk"></div>
+      <div class="c-banner sk"></div>
+      <div class="c-row">
+        <div class="c-card sk"></div><div class="c-card sk"></div><div class="c-card sk"></div><div class="c-card sk"></div>
+      </div>
+      <div class="c-status"><span class="spin" style="border-color:rgba(47,127,242,.3);border-top-color:var(--primary)"></span><span id="connectingText">正在连接…</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- Connection modal -->
+<div class="scrim" id="connScrim" onclick="closeConnModal()"></div>
+<div class="modal" id="connModal" role="dialog" aria-modal="true" aria-label="新建连接">
+  <h3>新建连接</h3>
+  <p class="muted" style="font-size:13px;margin-bottom:var(--s-5)">填好地址与账号，可先「测试连接」再保存。</p>
+  <div class="field"><label for="cName">名称</label><input class="input" id="cName" placeholder="如：本地开发"></div>
+  <div class="field"><label for="cHost">主机 Host</label><input class="input" id="cHost" value="localhost"></div>
+  <div class="flex" style="gap:var(--s-3)">
+    <div class="field" style="flex:1"><label for="cPort">端口</label><input class="input" id="cPort" value="5672"></div>
+    <div class="field" style="flex:1"><label for="cVhost">虚拟空间 <span class="term">?<span class="tip"><b>虚拟空间 (vhost)</b>：一块隔离的"房间"，不同项目用不同房间互不干扰。</span></span></label><input class="input" id="cVhost" value="/"></div>
+  </div>
+  <div class="flex" style="gap:var(--s-3)">
+    <div class="field" style="flex:1"><label for="cUser">用户名</label><input class="input" id="cUser" value="guest"></div>
+    <div class="field" style="flex:1"><label for="cPass">密码</label><input class="input" type="password" id="cPass" value=""></div>
+  </div>
+  <div class="actions">
+    <button class="btn secondary" onclick="closeConnModal()">取消</button>
+    <button class="btn ghost" id="testBtn" onclick="testConn()">测试连接</button>
+    <button class="btn primary" onclick="saveConn()">保存并连接</button>
+  </div>
+</div>
+
+<!-- Confirm dialog -->
+<div class="scrim" id="dlgScrim"></div>
+<div class="modal" id="dlg" role="dialog" aria-modal="true">
+  <h3 id="dlgTitle">确认发送</h3>
+  <p class="muted" id="dlgDesc" style="font-size:13px;margin-top:var(--s-2)"></p>
+  <div class="warn-note" id="dlgWarn" style="display:none"><span class="wn-ic">!</span><span>此操作会真实生效，且不可撤销。请确认目标队列无误。</span></div>
+  <div class="actions">
+    <button class="btn secondary" id="dlgCancel">取消</button>
+    <button class="btn danger" id="dlgOk">确认发送</button>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toastWrap"></div>
+
+<script>
+/* === Data === */
+const queues = {
+  order_queue:{name:'order_queue',desc:'订单创建事件',ready:1240,unacked:12,cons:3,health:'warn',inR:42,outR:38},
+  pay_queue:{name:'pay_queue',desc:'支付结果回调',ready:86,unacked:0,cons:0,health:'danger',inR:20,outR:0},
+  notify_queue:{name:'notify_queue',desc:'站内通知推送',ready:320,unacked:5,cons:4,health:'ok',inR:60,outR:58},
+  email_queue:{name:'email_queue',desc:'邮件发送',ready:540,unacked:8,cons:2,health:'ok',inR:30,outR:29},
+  log_queue:{name:'log_queue',desc:'访问日志',ready:0,unacked:0,cons:2,health:'idle',inR:5,outR:5},
+  scan_queue:{name:'scan_queue',desc:'图片审核',ready:12,unacked:1,cons:1,health:'ok',inR:8,outR:7}
+};
+const healthMeta={ok:{t:'正常',c:'ok'},warn:{t:'堆积预警',c:'warn'},danger:{t:'无人消费',c:'danger'},idle:{t:'空闲',c:'idle'}};
+let feed = [
+  {time:'10:21',dir:'发',q:'order_queue',st:'sent',summary:'订单 20260725-8841'},
+  {time:'10:18',dir:'收',q:'notify_queue',st:'consumed',summary:'推送通知 #5512'},
+  {time:'10:15',dir:'发',q:'pay_queue',st:'backlog',summary:'支付回调 txn_0098'},
+  {time:'10:09',dir:'发',q:'email_queue',st:'consumed',summary:'欢迎邮件 user_20931'},
+  {time:'09:58',dir:'发',q:'order_queue',st:'fail',summary:'订单 20260725-8830（进死信）'},
+  {time:'09:40',dir:'收',q:'log_queue',st:'consumed',summary:'访问日志 batch'}
+];
+const feedSt={sent:{t:'已发送',c:'s-sent'},consumed:{t:'已被消费',c:'s-consumed'},backlog:{t:'仍堆积',c:'s-backlog'},fail:{t:'消费失败',c:'s-fail'}};
+
+/* === Nav === */
+function go(view){
+  document.querySelectorAll('.nav-item').forEach(n=>n.classList.toggle('active',n.dataset.nav===view));
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  const el=document.querySelector('.view[data-view="'+view+'"]');
+  if(el) el.classList.add('active');
+  document.querySelector('.content').scrollTop=0;
+}
+document.querySelectorAll('.nav-item').forEach(n=>n.addEventListener('click',()=>go(n.dataset.nav)));
+
+/* === Render queue list === */
+function renderQueues(){
+  const tb=document.getElementById('queueRows'); tb.innerHTML='';
+  Object.values(queues).forEach(q=>{
+    const h=healthMeta[q.health];
+    const tr=document.createElement('tr');
+    tr.style.cursor='pointer';
+    tr.innerHTML=`<td class="mono">${q.name}</td><td class="mono">${q.ready.toLocaleString()}</td><td class="mono">${q.unacked}</td><td class="mono">${q.cons}</td><td><span class="badge-pill ${h.c}"><span class="dot ${h.c}"></span>${h.t}</span></td><td class="muted">查看 →</td>`;
+    tr.onclick=()=>openQueue(q.name);
+    tb.appendChild(tr);
+  });
+}
+function openQueue(name){
+  const q=queues[name]; const h=healthMeta[q.health];
+  document.getElementById('qdName').textContent=q.name;
+  document.getElementById('qdDesc').textContent=q.desc;
+  document.getElementById('qdDot').className='status-dot '+h.c;
+  document.getElementById('qdBanner').className='banner '+h.c;
+  document.getElementById('qdHealth').textContent=h.t;
+  document.getElementById('qdSummary').textContent=
+    q.health==='warn'?'待消费数偏高且持续增长，建议检查消费端速率。':
+    q.health==='danger'?'当前无消费者在取消息，消息会一直堆积，请确认消费程序是否在线。':
+    q.health==='idle'?'队列为空，暂无待处理消息。':'消费者正常工作中，收发速率基本平衡。';
+  document.getElementById('qdReady').textContent=q.ready.toLocaleString();
+  document.getElementById('qdUnacked').textContent=q.unacked;
+  document.getElementById('qdCons').textContent=q.cons;
+  document.getElementById('qdRate').innerHTML=`进 ${q.inR} <small>/ 出 ${q.outR}</small>`;
+  drawChart(q);
+  renderPreview(name);
+  go('queue-detail');
+}
+function renderPreview(name){
+  const tb=document.getElementById('previewRows'); tb.innerHTML='';
+  const samples=[
+    {rk:'order.created',t:'10:21:03',sz:'218 B',s:'订单 20260725-8841 · Pro会员月卡'},
+    {rk:'order.created',t:'10:20:51',sz:'216 B',s:'订单 20260725-8840 · 年卡'},
+    {rk:'order.refund',t:'10:19:40',sz:'204 B',s:'退款 order_20260724-7712'},
+    {rk:'order.created',t:'10:18:12',sz:'219 B',s:'订单 20260725-8839 · 月卡'},
+    {rk:'order.created',t:'10:17:55',sz:'217 B',s:'订单 20260725-8838'}
+  ];
+  samples.forEach(m=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td class="mono">${m.rk}</td><td class="mono">${m.t}</td><td class="mono">${m.sz}</td><td class="muted">${m.s}</td>`;
+    tb.appendChild(tr);
+  });
+}
+function grabPreview(){ renderPreview(document.getElementById('qdName').textContent); toast('ok','已重新抓取最新消息（未消费）'); }
+
+/* === Rate chart === */
+function drawChart(q){
+  const svg=document.getElementById('rateChart');
+  const W=640,H=160,pad=10, n=12;
+  const inPts=[], outPts=[];
+  let base=q.inR, base2=q.outR;
+  for(let i=0;i<n;i++){
+    base+=Math.round((Math.random()-0.45)*6); base=Math.max(2,base);
+    base2+=Math.round((Math.random()-0.5)*6); base2=Math.max(0,base2);
+    inPts.push(base); outPts.push(base2);
+  }
+  const max=Math.max(...inPts,...outPts,q.inR,q.outR)*1.2;
+  const x=i=>pad+i*(W-2*pad)/(n-1);
+  const y=v=>H-pad-(v/max)*(H-2*pad);
+  const line=(arr,color)=>'<polyline fill="none" stroke="'+color+'" stroke-width="2" points="'+arr.map((v,i)=>x(i)+','+y(v)).join(' ')+'"/>';
+  let grid='';
+  for(let g=0;g<=3;g++){const gy=pad+g*(H-2*pad)/3; grid+='<line x1="'+pad+'" y1="'+gy+'" x2="'+(W-pad)+'" y2="'+gy+'" stroke="rgba(27,34,48,0.07)" stroke-width="1"/>';}
+  svg.innerHTML=grid+line(inPts,'#2f7ff2')+line(outPts,'#12b5a6')
+    +'<circle cx="'+x(n-1)+'" cy="'+y(inPts[n-1])+'" r="3.5" fill="#2f7ff2"/>'
+    +'<circle cx="'+x(n-1)+'" cy="'+y(outPts[n-1])+'" r="3.5" fill="#12b5a6"/>';
+}
+
+/* === Message send === */
+function setMode(m,btn){ document.querySelectorAll('#tab-send .seg button').forEach(b=>b.classList.remove('on')); btn.classList.add('on');
+  document.getElementById('targetField').style.display = m==='direct'?'block':'none';
+  document.getElementById('exField').style.display = m==='direct'?'none':'block'; updatePredict(); }
+function fillExample(){ document.getElementById('msgBody').value='{\n  "userId": 20931,\n  "action": "refund",\n  "amount": 9900,\n  "reason": "用户申请" \n}'; updatePredict(); toast('info','已填入示例消息'); }
+function updatePredict(){ const t=document.getElementById('targetQueue').value; document.getElementById('predictTarget').textContent=t; }
+function switchMsgTab(tab,btn){
+  document.getElementById('tab-send').style.display = (tab==='send') ? 'block' : 'none';
+  document.getElementById('tab-feed').style.display = (tab==='feed') ? 'block' : 'none';
+  document.querySelectorAll('.seg button[data-tab]').forEach(b=>b.classList.toggle('on', b.dataset.tab===tab));
+  if(tab==='feed') renderFeed();
+}
+function sendMessage(){
+  // validate JSON
+  try{ JSON.parse(document.getElementById('msgBody').value); }catch(e){ toast('fail','消息不是合法 JSON，已拦截'); return; }
+  const q=document.getElementById('targetQueue').value;
+  confirmDialog({
+    title:'确认发送消息',
+    desc:'这条消息将去往：队列 <b>'+q+'</b>。发送后会在「消息通知列表」中记录其状态。',
+    danger:true,
+    okText:'确认发送',
+    onOk:()=>{
+      const ok=document.getElementById('dlgOk');
+      ok.disabled=true; ok.innerHTML='<span class="spin" style="border-color:rgba(255,255,255,.5);border-top-color:#fff"></span> 发送中';
+      setTimeout(()=>{
+        toast('ok','消息已发送成功');
+        const now=new Date(); const ts=String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+        feed.unshift({time:ts,dir:'发',q:q,st:'sent',summary:'测试消息 '+Math.floor(Math.random()*9000+1000)});
+        renderFeed();
+        // simulate consumption
+        setTimeout(()=>{ feed[0].st = queues[q].cons>0 ? 'consumed':'backlog'; renderFeed(); }, 1300);
+        go('messages'); switchMsgTab('feed');
+        ok.disabled=false; ok.textContent='确认发送';
+      }, 650);
+    }
+  });
+}
+
+/* === Feed === */
+let feedFilter='all';
+function renderFeed(){
+  const tb=document.getElementById('feedRows'); tb.innerHTML='';
+  const rows=feed.filter(f=>feedFilter==='all'||f.st===feedFilter);
+  if(!rows.length){ tb.innerHTML='<tr><td colspan="5"><div class="empty">该筛选下暂无消息</div></td></tr>'; }
+  rows.forEach(f=>{ const s=feedSt[f.st];
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td class="mono">${f.time}</td><td>${f.dir==='发'?'发送':'接收'}</td><td class="mono">${f.q}</td><td><span class="status-pill ${s.c}"><span class="dot ${s.c}"></span>${s.t}</span></td><td class="muted">${f.summary}</td>`;
+    tb.appendChild(tr);
+  });
+  // overview feed preview
+  const ov=document.getElementById('overviewFeed'); if(ov){ ov.innerHTML='';
+    feed.slice(0,4).forEach(f=>{ const s=feedSt[f.st];
+      const d=document.createElement('div'); d.className='row';
+      d.innerHTML=`<span class="status-pill ${s.c}"><span class="dot ${s.c}"></span>${s.t}</span><div><div class="name">${f.q}</div><div class="desc">${f.time} · ${f.summary}</div></div><div class="grow"></div><span class="muted">${f.dir==='发'?'发':'收'}</span>`;
+      ov.appendChild(d);
+    });
+  }
+}
+function setFeedFilter(f,btn){ feedFilter=f; document.querySelectorAll('#feedFilters .chip').forEach(c=>c.classList.toggle('on',c.dataset.f===f)); renderFeed(); }
+
+/* === Connection modal === */
+function openConnModal(){ document.getElementById('connScrim').classList.add('show'); document.getElementById('connModal').classList.add('show'); }
+function closeConnModal(){ document.getElementById('connScrim').classList.remove('show'); document.getElementById('connModal').classList.remove('show'); }
+function testConn(){ const b=document.getElementById('testBtn'); b.disabled=true; b.innerHTML='<span class="spin"></span> 连接中'; setTimeout(()=>{ b.disabled=false; b.textContent='测试连接'; toast('ok','连接成功：localhost:5672 可达'); },1100); }
+function saveConn(){ const name=document.getElementById('cName').value||'未命名连接'; closeConnModal(); toast('ok','已保存并连接：'+name); connectTo(name); }
+function connectTo(name){
+  const c=document.getElementById('connecting');
+  document.getElementById('connectingText').textContent='正在连接「'+name+'」…';
+  c.classList.add('show');
+  setTimeout(()=>{ c.classList.remove('show'); go('overview'); toast('ok','已连接到「'+name+'」'); }, 900);
+}
+
+/* === Confirm dialog === */
+function confirmDialog({title,desc,danger,okText,onOk}){
+  document.getElementById('dlgTitle').textContent=title;
+  document.getElementById('dlgDesc').innerHTML=desc;
+  document.getElementById('dlgWarn').style.display=danger?'flex':'none';
+  const ok=document.getElementById('dlgOk'); ok.textContent=okText||'确认'; ok.className='btn '+(danger?'danger':'primary');
+  document.getElementById('dlgScrim').classList.add('show'); document.getElementById('dlg').classList.add('show');
+  document.getElementById('dlgCancel').onclick=closeDlg;
+  ok.onclick=()=>{ closeDlg(); onOk&&onOk(); };
+}
+function closeDlg(){ document.getElementById('dlgScrim').classList.remove('show'); document.getElementById('dlg').classList.remove('show'); }
+
+/* === Toast === */
+function toast(type,msg){ const w=document.getElementById('toastWrap');
+  const t=document.createElement('div'); t.className='toast '+type;
+  const ic = type==='ok' ? '<svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 6.5 L5 9.5 L10 3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' : (type==='fail'?'!':'i');
+  t.innerHTML='<span class="ic">'+ic+'</span>'+msg; w.appendChild(t);
+  setTimeout(()=>{ t.style.opacity='0'; t.style.transform='translateY(-8px)'; setTimeout(()=>t.remove(),200); },2600);
+}
+
+/* === init === */
+renderQueues(); renderFeed(); updatePredict();
+
+/* === 键盘可达：为带 onclick 的非按钮元素补 role/tabindex/Enter·Space === */
+function makeKeyboardAccessible(){
+  document.querySelectorAll('[onclick]').forEach(el=>{
+    if(el.tagName==='BUTTON' || el.classList.contains('scrim')) return;
+    el.setAttribute('role','button');
+    if(!el.hasAttribute('tabindex')) el.setAttribute('tabindex','0');
+    el.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){ e.preventDefault(); el.click(); } });
+  });
+}
+makeKeyboardAccessible();
+</script>
+</body>
+</html>

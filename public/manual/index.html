@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MQDesk 零基础用户操作手册</title>
+  <style>
+    :root {
+      --bg-base: #eef1f8;
+      --ink-900: #1b2230;
+      --ink-600: #565f73;
+      --ink-400: #6a7388;
+      --primary: #2f7ff2;
+      --primary-soft: #e2edff;
+      --accent: #12b5a6;
+      --ok: #1fa971;
+      --warn: #e8a33d;
+      --danger: #e5484d;
+      --idle: #9aa3b2;
+      --glass: rgba(255, 255, 255, 0.62);
+      --glass-border: rgba(255, 255, 255, 0.75);
+      --hairline: rgba(27, 34, 48, 0.08);
+      --r-md: 14px;
+      --r-lg: 20px;
+      --s-3: 12px;
+      --s-4: 16px;
+      --s-5: 24px;
+      --s-6: 32px;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg-base: #0f1115;
+        --ink-900: #f0f2f6;
+        --ink-600: #a7aebf;
+        --ink-400: #6f7a8f;
+        --primary: #5b9cf7;
+        --primary-soft: rgba(91, 156, 247, 0.16);
+        --accent: #2dd4bf;
+        --ok: #3dd68a;
+        --warn: #f5b84d;
+        --danger: #ff6b6b;
+        --idle: #6f7a8f;
+        --glass: rgba(30, 34, 42, 0.72);
+        --glass-border: rgba(255, 255, 255, 0.1);
+        --hairline: rgba(255, 255, 255, 0.1);
+      }
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      font-family: 'Microsoft YaHei', system-ui, sans-serif;
+      color: var(--ink-900);
+      background: var(--bg-base);
+      line-height: 1.75;
+      font-size: 14px;
+      padding: 40px 24px;
+    }
+    .wrap {
+      max-width: 820px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 28px; margin-bottom: 8px; }
+    h2 { font-size: 22px; margin-top: 40px; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--hairline); }
+    h3 { font-size: 17px; margin-top: 28px; margin-bottom: 12px; color: var(--primary); }
+    h4 { font-size: 15px; margin-top: 20px; margin-bottom: 8px; }
+    p { margin: 10px 0; }
+    ul, ol { margin: 10px 0; padding-left: 24px; }
+    li { margin: 6px 0; }
+    a { color: var(--primary); text-decoration: none; }
+    blockquote {
+      margin: 16px 0;
+      padding: 14px 18px;
+      background: var(--glass);
+      border-left: 4px solid var(--primary);
+      border-radius: 0 var(--r-md) var(--r-md) 0;
+      color: var(--ink-600);
+    }
+    code {
+      font-family: 'JetBrains Mono', ui-monospace, monospace;
+      background: var(--primary-soft);
+      padding: 2px 6px;
+      border-radius: 6px;
+      font-size: 12px;
+    }
+    pre {
+      background: var(--glass);
+      border: 1px solid var(--hairline);
+      border-radius: var(--r-md);
+      padding: 14px;
+      overflow-x: auto;
+      font-size: 13px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0;
+      font-size: 13px;
+    }
+    th, td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--hairline);
+      text-align: left;
+    }
+    th {
+      color: var(--ink-400);
+      font-weight: 600;
+      font-size: 12px;
+    }
+    .meta { color: var(--ink-400); font-size: 13px; margin-bottom: 24px; }
+    .shot {
+      margin: 16px 0;
+      padding: 12px;
+      background: var(--glass);
+      border: 1px solid var(--hairline);
+      border-radius: var(--r-lg);
+    }
+    .shot img {
+      width: 100%;
+      border-radius: var(--r-md);
+      display: block;
+      border: 1px solid var(--hairline);
+    }
+    .shot p {
+      margin: 8px 0 0;
+      font-size: 12px;
+      color: var(--ink-600);
+    }
+    .status-dot {
+      display: inline-block;
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 6px;
+    }
+    .ok { background: var(--ok); }
+    .warn { background: var(--warn); }
+    .danger { background: var(--danger); }
+    .idle { background: var(--idle); }
+    .kbd {
+      display: inline-block;
+      padding: 2px 8px;
+      background: var(--glass);
+      border: 1px solid var(--hairline);
+      border-radius: 6px;
+      font-family: monospace;
+      font-size: 12px;
+    }
+    .toc {
+      background: var(--glass);
+      border: 1px solid var(--hairline);
+      border-radius: var(--r-lg);
+      padding: 18px 22px;
+      margin-bottom: 32px;
+    }
+    .toc ul { margin: 0; }
+    .toc li { margin: 4px 0; }
+    .back {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      background: var(--primary);
+      color: #fff;
+      border-radius: var(--r-md);
+      font-weight: 600;
+      margin-bottom: 20px;
+      cursor: pointer;
+      border: none;
+      font-size: 14px;
+    }
+    .back:hover { filter: brightness(1.06); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <button class="back" onclick="history.back()">← 返回设置</button>
+
+    <h1>MQDesk 零基础用户操作手册</h1>
+    <p class="meta">
+      <strong>版本</strong>：v0.1.0（MVP）<br>
+      <strong>适用对象</strong>：完全不懂 RabbitMQ、不懂命令行、第一次使用 MQDesk 的用户<br>
+      <strong>阅读建议</strong>：按顺序阅读，遇到看不懂的术语可先翻到文末「附录 → 术语解释」。
+    </p>
+
+    <div class="toc">
+      <strong>目录</strong>
+      <ul>
+        <li><a href="#s1">1. 产品概述</a></li>
+        <li><a href="#s2">2. 安装与初始化</a></li>
+        <li><a href="#s3">3. 界面导览</a></li>
+        <li><a href="#s4">4. 功能详解</a></li>
+        <li><a href="#s5">5. 常见问题解答</a></li>
+        <li><a href="#s6">6. 附录</a></li>
+      </ul>
+    </div>
+
+    <h2 id="s1">1. 产品概述</h2>
+
+    <h3>1.1 MQDesk 是什么？</h3>
+    <p>MQDesk 是一款<strong>桌面版 RabbitMQ 可视化管控工具</strong>。</p>
+    <p>你可以把它理解成一个“<strong>消息队列的图形化管理小助手</strong>”。它能帮你：</p>
+    <ul>
+      <li>不用记命令，就能连接 RabbitMQ 服务；</li>
+      <li>一眼看出队列是否堆积、有没有人消费；</li>
+      <li>像发微信一样发送测试消息；</li>
+      <li>查看消息发送记录，追踪消息去向。</li>
+    </ul>
+
+    <h3>1.2 它能帮你解决什么问题？</h3>
+    <table>
+      <thead>
+        <tr><th>场景</th><th>没有 MQDesk 时</th><th>有了 MQDesk 后</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>想查看队列有多少消息</td><td>要打开英文管理后台，找半天</td><td>打开软件总览页，数字直接显示</td></tr>
+        <tr><td>怀疑消息没发出去</td><td>要写代码测试或查日志</td><td>点几下就能发一条测试消息</td></tr>
+        <tr><td>队列消息堆积了</td><td>看不到，等问题爆发</td><td>健康状态变红/黄，提前预警</td></tr>
+        <tr><td>忘了连接密码</td><td>明文写在配置文件里</td><td>本地加密保存，更安全</td></tr>
+      </tbody>
+    </table>
+
+    <h3>1.3 适合谁用？</h3>
+    <ul>
+      <li>刚接触 RabbitMQ 的新手开发者；</li>
+      <li>需要临时查看/测试消息队列的测试人员；</li>
+      <li>不想折腾英文管理后台的运维人员；</li>
+      <li>学习消息队列课程的学生。</li>
+    </ul>
+
+    <h2 id="s2">2. 安装与初始化</h2>
+
+    <h3>2.1 环境准备</h3>
+    <table>
+      <thead>
+        <tr><th>项目</th><th>要求</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>操作系统</td><td>Windows 10/11（64 位）或兼容的 Linux 发行版（如麒麟）</td></tr>
+        <tr><td>内存</td><td>至少 4GB</td></tr>
+        <tr><td>硬盘空间</td><td>至少 200MB 可用空间</td></tr>
+        <tr><td>网络</td><td>能访问你要连接的 RabbitMQ 服务器</td></tr>
+        <tr><td>依赖组件</td><td>已内置，无需单独安装</td></tr>
+      </tbody>
+    </table>
+    <blockquote>
+      <strong>什么是 RabbitMQ？</strong> 它是一种“消息中间件”，负责在不同程序之间传递消息。如果你还没安装 RabbitMQ，可以先让同事或运维给你一个连接地址，再使用 MQDesk。
+    </blockquote>
+
+    <h3>2.2 安装步骤</h3>
+    <h4>第一步：获取安装包</h4>
+    <p>从发布页面下载对应系统的安装文件：</p>
+    <ul>
+      <li>Windows： <code>MQDesk_0.1.0_x64-setup.exe</code></li>
+      <li>麒麟 / Linux： <code>mqdesk_0.1.0_amd64.deb</code></li>
+    </ul>
+
+    <h4>第二步：运行安装程序（Windows）</h4>
+    <ol>
+      <li>双击安装包；</li>
+      <li>如果系统弹出“是否允许此应用对你的设备进行更改”，点击「是」；</li>
+      <li>选择安装路径（建议保持默认），点击「下一步」；</li>
+      <li>等待安装完成，点击「完成」。</li>
+    </ol>
+
+    <h4>第三步：首次启动</h4>
+    <ol>
+      <li>安装完成后，桌面/开始菜单会出现 MQDesk 图标；</li>
+      <li>双击图标启动软件；</li>
+      <li>首次启动会弹出主界面。</li>
+    </ol>
+    <div class="shot">
+      <img src="screenshots/test-main.png" alt="MQDesk 首次启动界面">
+      <p>图 2-1：MQDesk 首次启动后的连接管理页面</p>
+    </div>
+
+    <h3>2.3 首次启动配置</h3>
+    <p>第一次打开 MQDesk，你会看到「连接管理」页面。此时还没有保存任何连接，点击「新建连接」开始。</p>
+    <div class="shot">
+      <img src="screenshots/main-interface.png" alt="MQDesk 总览界面">
+      <p>图 2-2：连接 RabbitMQ 后的总览仪表盘界面</p>
+    </div>
+
+    <h2 id="s3">3. 界面导览</h2>
+
+    <h3>3.1 主界面整体布局</h3>
+    <p>MQDesk 主界面分为三个主要区域：</p>
+    <ol>
+      <li><strong>标题栏</strong>：Logo + 窗口控制按钮；</li>
+      <li><strong>侧边栏</strong>：功能导航入口；</li>
+      <li><strong>内容区</strong>：当前功能页面。</li>
+    </ol>
+    <div class="shot">
+      <img src="screenshots/main-interface.png" alt="主界面布局">
+      <p>图 3-1：总览页布局——① 标题栏、② 侧边栏、③ 内容区</p>
+    </div>
+
+    <h3>3.2 标题栏</h3>
+    <p>标题栏位于窗口最顶部，包含 MQDesk Logo、窗口标题、最小化/最大化/关闭按钮。</p>
+
+    <h3>3.3 侧边栏</h3>
+    <p>侧边栏是功能导航入口：</p>
+    <table>
+      <thead>
+        <tr><th>按钮</th><th>名称</th><th>作用</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>🔌 连接</td><td>连接管理</td><td>新建、编辑、删除 RabbitMQ 连接</td></tr>
+        <tr><td>📊 总览</td><td>总览仪表盘</td><td>查看整体健康状态和关键数字</td></tr>
+        <tr><td>📋 队列</td><td>队列列表</td><td>查看所有队列及其健康状态</td></tr>
+        <tr><td>✉️ 消息</td><td>消息发送</td><td>发送测试消息并查看记录</td></tr>
+        <tr><td>⚙️ 设置</td><td>设置</td><td>切换主题、查看术语表、打开本手册</td></tr>
+      </tbody>
+    </table>
+
+    <h3>3.4 内容区</h3>
+    <p>内容区会随侧边栏切换显示不同页面。当前选中的导航按钮会高亮显示。</p>
+
+    <h3>3.5 系统托盘图标</h3>
+    <p>关闭窗口后，MQDesk 会继续运行在系统托盘中：</p>
+    <ul>
+      <li><strong>左键单击托盘图标</strong>：显示主窗口；</li>
+      <li><strong>右键单击托盘图标</strong>：显示「显示窗口 / 退出」菜单。</li>
+    </ul>
+
+    <h2 id="s4">4. 功能详解</h2>
+
+    <h3>4.1 连接管理</h3>
+    <h4>是什么？</h4>
+    <p>「连接管理」用于保存你要管理的 RabbitMQ 服务地址、用户名、密码等信息。</p>
+    <h4>为什么需要它？</h4>
+    <p>就像微信需要保存账号密码一样，MQDesk 也需要先保存 RabbitMQ 的连接信息，才能帮你查看队列、发送消息。</p>
+    <h4>怎么用？</h4>
+    <h4>新建连接</h4>
+    <ol>
+      <li>点击侧边栏「连接」；</li>
+      <li>点击右上角「+ 新建连接」按钮；</li>
+      <li>在弹出的表单中填写连接信息：</li>
+    </ol>
+    <table>
+      <thead>
+        <tr><th>字段</th><th>填写说明</th><th>示例</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>连接名称</td><td>给这个连接起个名字，方便识别</td><td>开发环境</td></tr>
+        <tr><td>主机地址</td><td>RabbitMQ 服务器地址</td><td>127.0.0.1 或 mq.example.com</td></tr>
+        <tr><td>AMQP 端口</td><td>消息传输端口，默认 5672</td><td>5672</td></tr>
+        <tr><td>管理端口</td><td>网页管理接口端口，默认 15672</td><td>15672</td></tr>
+        <tr><td>管理协议</td><td>一般选 http</td><td>http</td></tr>
+        <tr><td>虚拟空间</td><td>默认填写 /</td><td>/</td></tr>
+        <tr><td>用户名</td><td>RabbitMQ 登录用户名</td><td>guest</td></tr>
+        <tr><td>密码</td><td>RabbitMQ 登录密码</td><td>guest</td></tr>
+      </tbody>
+    </table>
+    <div class="shot">
+      <img src="screenshots/new-connection.png" alt="新建连接">
+      <p>图 4-1：新建连接表单</p>
+    </div>
+    <ol start="4">
+      <li>填写完成后，点击「测试连接」；</li>
+      <li>如果提示「已连接：...」，说明信息填对了；</li>
+      <li>点击「保存并连接」，软件会自动连接并跳转到总览页。</li>
+    </ol>
+
+    <h4>编辑 / 删除连接</h4>
+    <ol>
+      <li>在连接列表中，点击某个连接卡片；</li>
+      <li>点击「编辑」可修改连接信息；</li>
+      <li>点击「删除」可删除该连接（会二次确认）。</li>
+    </ol>
+
+    <h4>切换连接</h4>
+    <ol>
+      <li>点击侧边栏「连接」；</li>
+      <li>点击想要使用的连接卡片；</li>
+      <li>软件会自动连接该 RabbitMQ 服务。</li>
+    </ol>
+
+    <h3>4.2 总览仪表盘</h3>
+    <h4>是什么？</h4>
+    <p>「总览」是 MQDesk 的“首页”，用一句话和几个数字卡片告诉你 RabbitMQ 当前整体状态。</p>
+    <h4>为什么需要它？</h4>
+    <p>就像手机健康 App 每天告诉你“步数、睡眠、心率”一样，总览让你不用逐个队列检查，就能快速判断系统是否健康。</p>
+    <h4>怎么用？</h4>
+    <p>连接成功后，软件会自动跳转到总览页，显示以下内容：</p>
+    <table>
+      <thead>
+        <tr><th>区域</th><th>说明</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>健康状态横幅</td><td>一句话总结当前状态</td></tr>
+        <tr><td>队列总数</td><td>当前有多少个队列</td></tr>
+        <tr><td>交换机总数</td><td>当前有多少个交换机</td></tr>
+        <tr><td>待消费消息</td><td>所有队列中等待被消费的消息总数</td></tr>
+        <tr><td>在线消费者</td><td>当前有多少个消费者程序在线</td></tr>
+      </tbody>
+    </table>
+    <div class="shot">
+      <img src="screenshots/overview-dashboard.png" alt="总览仪表盘">
+      <p>图 4-2：总览仪表盘</p>
+    </div>
+
+    <h4>健康状态说明</h4>
+    <table>
+      <thead>
+        <tr><th>颜色</th><th>状态</th><th>含义</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><span class="status-dot ok"></span>绿色</td><td>正常</td><td>队列有消费者，消息没有堆积</td></tr>
+        <tr><td><span class="status-dot warn"></span>黄色</td><td>堆积预警</td><td>某个队列消息数超过 1000，需要关注</td></tr>
+        <tr><td><span class="status-dot danger"></span>红色</td><td>无人消费</td><td>队列有消息，但没有消费者处理</td></tr>
+        <tr><td><span class="status-dot idle"></span>灰色</td><td>空闲</td><td>队列里没有消息，也没有消费者</td></tr>
+      </tbody>
+    </table>
+
+    <h3>4.3 队列列表</h3>
+    <h4>是什么？</h4>
+    <p>「队列」页面列出当前 RabbitMQ 中的所有队列，并显示每个队列的健康状态。</p>
+    <h4>为什么需要它？</h4>
+    <p>当你怀疑某个业务出问题（例如订单没处理、短信没发送），可以先看队列列表，快速定位是不是消息卡住了。</p>
+    <h4>怎么用？</h4>
+    <ol>
+      <li>点击侧边栏「队列」；</li>
+      <li>页面会显示所有队列；</li>
+      <li>队列按健康状态排序，红色/黄色会排在前面；</li>
+      <li>在顶部搜索框输入队列名，可以过滤列表。</li>
+    </ol>
+    <div class="shot">
+      <img src="screenshots/queue-list.png" alt="队列列表">
+      <p>图 4-3：队列列表页面</p>
+    </div>
+
+    <h4>查看队列详情</h4>
+    <ol>
+      <li>在队列列表中找到目标队列；</li>
+      <li>点击该行；</li>
+      <li>进入队列详情页。</li>
+    </ol>
+
+    <h3>4.4 队列详情</h3>
+    <h4>是什么？</h4>
+    <p>「队列详情」展示某个具体队列的实时数据，包括消息数量、消费者数量、消息速率等。</p>
+    <h4>为什么需要它？</h4>
+    <p>当你发现某个队列健康状态异常（红色/黄色），需要进入详情页看具体数字，判断问题有多严重。</p>
+    <h4>怎么用？</h4>
+    <table>
+      <thead>
+        <tr><th>区域</th><th>说明</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>健康状态卡片</td><td>显示当前队列健康状态</td></tr>
+        <tr><td>核心指标</td><td>待消费、处理中、消费者数、消息速率</td></tr>
+        <tr><td>速率折线图</td><td>近一段时间的消息流入/流出趋势</td></tr>
+        <tr><td>抓取预览</td><td>查看队列前几条消息内容，不会真正消费</td></tr>
+      </tbody>
+    </table>
+    <div class="shot">
+      <img src="screenshots/queue-detail.png" alt="队列详情">
+      <p>图 4-4：队列详情页面</p>
+    </div>
+
+    <h4>抓取预览消息</h4>
+    <ol>
+      <li>在队列详情页找到「抓取预览」区域；</li>
+      <li>输入想看的消息数量（默认 10 条）；</li>
+      <li>点击「抓取预览」按钮；</li>
+      <li>消息内容会显示在下方，原来的消息仍保留在队列中。</li>
+    </ol>
+
+    <h3>4.5 消息发送</h3>
+    <h4>是什么？</h4>
+    <p>「消息」页面用于向 RabbitMQ 发送测试消息，并查看发送历史。</p>
+    <h4>为什么需要它？</h4>
+    <p>当你开发了新功能，想验证“程序能不能收到消息”，或者想模拟某个业务事件时，可以在这里手动发一条消息。</p>
+    <h4>怎么用？</h4>
+    <h4>发送一条消息</h4>
+    <ol>
+      <li>点击侧边栏「消息」；</li>
+      <li>选择发送模式：
+        <ul>
+          <li><strong>直发模式</strong>：直接发送到指定队列；</li>
+          <li><strong>交换机模式</strong>：发送到交换机，由路由键决定去向。</li>
+        </ul>
+      </li>
+      <li>填写目标队列名或路由键；</li>
+      <li>选择消息内容类型（通常选 JSON）；</li>
+      <li>填写消息内容；</li>
+      <li>点击「发送」。</li>
+    </ol>
+    <div class="shot">
+      <img src="screenshots/publish-message.png" alt="消息发送">
+      <p>图 4-5：消息发送页面</p>
+    </div>
+
+    <h4>查看发送记录</h4>
+    <p>发送成功后，页面下方的消息流会新增一条记录，包含时间、队列、状态、摘要。</p>
+
+    <h3>4.6 设置</h3>
+    <h4>是什么？</h4>
+    <p>「设置」页面用于调整应用偏好和查看帮助信息。</p>
+    <h4>为什么需要它？</h4>
+    <p>你可以在这里切换界面主题、学习 RabbitMQ 术语、打开本操作手册。</p>
+    <h4>怎么用？</h4>
+    <div class="shot">
+      <img src="screenshots/settings-page.png" alt="设置页面">
+      <p>图 4-6：设置页面</p>
+    </div>
+    <h4>切换主题</h4>
+    <ol>
+      <li>点击侧边栏「设置」；</li>
+      <li>找到「外观」区域；</li>
+      <li>点击「浅色」「暗黑」或「跟随系统」；</li>
+      <li>界面主题会立即切换。</li>
+    </ol>
+    <h4>查看术语表 / 操作手册</h4>
+    <p>设置页下方有术语表，遇到不懂的词可以在这里查看大白话解释。点击「查看操作手册」可打开本手册。</p>
+
+    <h2 id="s5">5. 常见问题解答</h2>
+
+    <h4>Q1：打开软件后提示“未连接到 RabbitMQ”怎么办？</h4>
+    <p><strong>原因</strong>：还没有选择或保存连接。<br>
+    <strong>解决</strong>：点击侧边栏「连接」→「新建连接」→ 填写信息 →「保存并连接」。</p>
+
+    <h4>Q2：测试连接提示“认证失败”怎么办？</h4>
+    <p><strong>原因</strong>：用户名或密码填错了。<br>
+    <strong>解决</strong>：检查用户名、密码是否正确，注意大小写。如果不确定，可以询问提供 RabbitMQ 地址的同事或运维。</p>
+
+    <h4>Q3：队列健康状态是红色，是什么意思？</h4>
+    <p><strong>含义</strong>：这个队列里有消息，但没有消费者在处理。<br>
+    <strong>解决</strong>：检查对应的消费者程序是否启动，或者是否配置错误。</p>
+
+    <h4>Q4：队列健康状态是黄色，是什么意思？</h4>
+    <p><strong>含义</strong>：这个队列的消息数超过了 1000 条，出现堆积。<br>
+    <strong>解决</strong>：加快消费速度，或增加消费者实例。</p>
+
+    <h4>Q5：发送消息后，状态一直显示“已发送”，不变成“已消费”？</h4>
+    <p><strong>原因</strong>：没有消费者程序处理这条消息。<br>
+    <strong>解决</strong>：启动对应的消费者程序，或检查路由键是否正确。</p>
+
+    <h4>Q6：关闭窗口后，MQDesk 还在运行吗？</h4>
+    <p><strong>答案</strong>：是的。关闭窗口会最小化到系统托盘，右键托盘图标选择「退出」才能真正关闭。</p>
+
+    <h4>Q7：软件右下角没有托盘图标？</h4>
+    <p><strong>原因</strong>：Windows 可能把图标折叠到「显示隐藏的图标」区域。<br>
+    <strong>解决</strong>：点击任务栏右下角的小箭头，找到 MQDesk 图标，拖到常驻区域。</p>
+
+    <h4>Q8：界面出现「跳到主内容」字样？</h4>
+    <p><strong>答案</strong>：这是给键盘用户使用的无障碍快捷链接，按 Tab 键聚焦时会出现，平时不会显示。如果你一直看到它，请升级到最新版本。</p>
+
+    <h4>Q9：暗黑模式下某些区域还是白色的？</h4>
+    <p><strong>原因</strong>：早期版本可能存在主题适配不完整。<br>
+    <strong>解决</strong>：切换到浅色模式使用，或等待后续更新。</p>
+
+    <h2 id="s6">6. 附录</h2>
+
+    <h3>6.1 快捷键列表</h3>
+    <table>
+      <thead>
+        <tr><th>快捷键</th><th>功能</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><span class="kbd">Tab</span></td><td>在按钮/输入框之间切换焦点</td></tr>
+        <tr><td><span class="kbd">Shift + Tab</span></td><td>反向切换焦点</td></tr>
+        <tr><td><span class="kbd">Enter</span> / <span class="kbd">Space</span></td><td>激活当前聚焦的按钮</td></tr>
+        <tr><td><span class="kbd">Esc</span></td><td>关闭弹窗（如果有）</td></tr>
+      </tbody>
+    </table>
+
+    <h3>6.2 术语解释</h3>
+    <table>
+      <thead>
+        <tr><th>术语</th><th>大白话解释</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>RabbitMQ</td><td>一个负责在不同程序之间传递消息的软件</td></tr>
+        <tr><td>队列（Queue）</td><td>存放消息的“桶”，消费者从这里取消息</td></tr>
+        <tr><td>交换机（Exchange）</td><td>消息的“分拣中心”，决定消息该进哪个队列</td></tr>
+        <tr><td>路由键（Routing Key）</td><td>贴在消息上的“地址标签”</td></tr>
+        <tr><td>消费者（Consumer）</td><td>从队列取消息并处理的程序</td></tr>
+        <tr><td>待消费（Ready）</td><td>已经躺在队列里、等着被取的消息</td></tr>
+        <tr><td>处理中（Unacked）</td><td>已被取走但还没确认处理完的消息</td></tr>
+        <tr><td>虚拟空间（vhost）</td><td>一块隔离的“房间”，不同项目互不干扰</td></tr>
+        <tr><td>AMQP</td><td>RabbitMQ 用来传输消息的协议</td></tr>
+        <tr><td>Publisher Confirm</td><td>发送消息后，RabbitMQ 给的“收到回执”</td></tr>
+      </tbody>
+    </table>
+
+    <h3>6.3 技术支持</h3>
+    <p>如在使用过程中遇到问题，可通过以下方式获取帮助：</p>
+    <ul>
+      <li><strong>项目仓库</strong>：d:\project\RabbitConsumerHub-main</li>
+      <li><strong>项目文档</strong>：MQDesk_PRD.md、DesignSystemManifest.md、DevHandoff.md</li>
+      <li><strong>反馈问题</strong>：请在项目仓库提交 Issue，并附上截图和复现步骤。</li>
+    </ul>
+
+    <blockquote>
+      <strong>手册版本记录</strong><br>
+      v0.1.0：首次编写，对应 MQDesk MVP 版本。
+    </blockquote>
+  </div>
+</body>
+</html>

@@ -1,0 +1,100 @@
+/* === Design System Tokens (Liquid Glass) ===
+   来源：DesignSystemManifest.md + prototype-liquid-glass.html
+   说明：辅助色已替换为青绿以规避紫色；Latin 字体用 Plus Jakarta Sans（可商用）
+*/
+
+:root {
+  /* 环境底色 */
+  --bg-base: #eef1f8;
+  --bg-halo-1: #cfe0ff;
+  --bg-halo-2: #c7f0e8;
+  --bg-halo-3: #ffe3da;
+
+  /* 文字 */
+  --ink-900: #1b2230;
+  --ink-600: #565f73;
+  --ink-400: #6a7388;
+  --ink-on-accent: #ffffff;
+
+  /* 品牌 / 强调 */
+  --primary: #2f7ff2;
+  --primary-soft: #e2edff;
+  --accent: #12b5a6;
+  --accent-soft: #d6f3ee;
+
+  /* 语义状态 */
+  --ok: #1fa971;
+  --warn: #e8a33d;
+  --danger: #e5484d;
+  --idle: #9aa3b2;
+  --info: #2f7ff2;
+
+  /* 玻璃层 */
+  --glass: rgba(255, 255, 255, 0.62);
+  --glass-strong: rgba(255, 255, 255, 0.82);
+  --glass-border: rgba(255, 255, 255, 0.75);
+  --hairline: rgba(27, 34, 48, 0.08);
+
+  /* 圆角 */
+  --r-sm: 10px;
+  --r-md: 14px;
+  --r-lg: 20px;
+  --r-pill: 999px;
+
+  /* 间距（8px 基础） */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-5: 24px;
+  --s-6: 32px;
+  --s-7: 48px;
+  --s-8: 64px;
+
+  /* 阴影 */
+  --sh-1: 0 2px 8px rgba(27, 34, 48, 0.06);
+  --sh-2: 0 8px 24px rgba(27, 34, 48, 0.1);
+  --sh-3: 0 16px 48px rgba(27, 34, 48, 0.14);
+  --sh-accent: 0 8px 24px rgba(47, 127, 242, 0.28);
+  --ring: 0 0 0 3px rgba(47, 127, 242, 0.3);
+
+  /* 字体 */
+  --font-display: "Plus Jakarta Sans", "Microsoft YaHei", system-ui, sans-serif;
+  --font-body: "Plus Jakarta Sans", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "DM Mono", "JetBrains Mono", ui-monospace, monospace;
+}
+
+/* === 暗黑主题 === */
+[data-theme="dark"] {
+  --bg-base: #0f1115;
+  --bg-halo-1: #1a3a6e;
+  --bg-halo-2: #0f4a42;
+  --bg-halo-3: #4a2a22;
+
+  --ink-900: #f0f2f6;
+  --ink-600: #a7aebf;
+  --ink-400: #6f7a8f;
+  --ink-on-accent: #ffffff;
+
+  --primary: #5b9cf7;
+  --primary-soft: rgba(91, 156, 247, 0.16);
+  --accent: #2dd4bf;
+  --accent-soft: rgba(45, 212, 191, 0.14);
+
+  --ok: #3dd68a;
+  --warn: #f5b84d;
+  --danger: #ff6b6b;
+  --idle: #6f7a8f;
+  --info: #5b9cf7;
+
+  --glass: rgba(30, 34, 42, 0.72);
+  --glass-strong: rgba(38, 42, 52, 0.88);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --hairline: rgba(255, 255, 255, 0.1);
+
+  --sh-1: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --sh-2: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --sh-3: 0 16px 48px rgba(0, 0, 0, 0.5);
+  --sh-accent: 0 8px 24px rgba(91, 156, 247, 0.35);
+  --ring: 0 0 0 3px rgba(91, 156, 247, 0.35);
+}

@@ -45,7 +45,7 @@
         "template": "windows/installer.nsi"
       },
       "webviewInstallMode": {
-        "type": "offlineInstaller",
+        "type": "embedBootstrapper",
         "silent": true
       }
     },

@@ -42,5 +42,8 @@ apk/linux-offline/
 # === 构建时生成的 WebView2 Loader（由 build.rs 自动复制）===
 src-tauri/WebView2Loader.dll
 
+# === 已放弃 AppImage 格式 ===
+*.AppImage
+
 # === 旧项目归档（不参与构建）===
 legacy/

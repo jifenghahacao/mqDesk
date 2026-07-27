@@ -29,17 +29,20 @@ fn main() {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").map(PathBuf::from).unwrap_or_else(|_| {
         env::current_dir().expect("cannot get current dir")
     });
+    let target_os = env::var("CARGO_CFG_TARGET_OS").unwrap_or_default();
 
-    // 将 WebView2Loader.dll 复制到 src-tauri 根目录，供 Tauri bundle resources 引用
-    if let Some(src) = find_webview2_loader(&manifest_dir) {
-        let dst = manifest_dir.join("WebView2Loader.dll");
-        if let Err(e) = fs::copy(&src, &dst) {
-            println!("cargo:warning=failed to copy WebView2Loader.dll: {}", e);
+    // 仅 Windows 目标需要把 WebView2Loader.dll 复制到 src-tauri 根目录，供 Tauri bundle resources 引用
+    if target_os == "windows" {
+        if let Some(src) = find_webview2_loader(&manifest_dir) {
+            let dst = manifest_dir.join("WebView2Loader.dll");
+            if let Err(e) = fs::copy(&src, &dst) {
+                println!("cargo:warning=failed to copy WebView2Loader.dll: {}", e);
+            } else {
+                println!("cargo:rerun-if-changed={}", src.display());
+            }
         } else {
-            println!("cargo:rerun-if-changed={}", src.display());
+            println!("cargo:warning=WebView2Loader.dll not found; runtime may fail on target machine");
         }
-    } else {
-        println!("cargo:warning=WebView2Loader.dll not found; runtime may fail on target machine");
     }
 
     tauri_build::build();

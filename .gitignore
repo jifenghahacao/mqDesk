@@ -39,5 +39,8 @@ tmp-screenshot.png
 # === Linux 离线依赖包（体积过大，单独分发）===
 apk/linux-offline/
 
+# === 构建时生成的 WebView2 Loader（由 build.rs 自动复制）===
+src-tauri/WebView2Loader.dll
+
 # === 旧项目归档（不参与构建）===
 legacy/

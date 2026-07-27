@@ -45,9 +45,12 @@
         "template": "windows/installer.nsi"
       },
       "webviewInstallMode": {
-        "type": "embedBootstrapper",
+        "type": "offlineInstaller",
         "silent": true
       }
+    },
+    "resources": {
+      "WebView2Loader.dll": "WebView2Loader.dll"
     },
     "linux": {
       "deb": {

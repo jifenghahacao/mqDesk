@@ -80,21 +80,25 @@ export function MessagesView() {
 
   async function loadFeed() {
     try {
+      // 本地追踪记录（通过 MQDesk 发送的消息）
       const filter = feedFilter === "all" ? null : { status: feedFilter };
-      const list = await listMessageFeed(filter);
-      // 本地追踪记录为空时，从队列中加载真实消息作为兜底展示
-      if (feedFilter === "all" && list.length === 0) {
-        const fallback = await loadQueueMessagesFallback();
-        setFeed(fallback);
-      } else {
-        setFeed(list);
+      const localList = await listMessageFeed(filter);
+
+      // 队列真实消息：sent 筛选时不混合，其它筛选用相同状态过滤后合并
+      let queueItems = [];
+      if (feedFilter !== "sent") {
+        queueItems = await loadQueueMessagesAsFeed(feedFilter === "all" ? null : feedFilter);
       }
+
+      // 合并并简单按时间倒序（队列消息时间取 peek 时刻，可能排在最近发送的消息之后）
+      const merged = [...localList, ...queueItems].sort((a, b) => b.time.localeCompare(a.time));
+      setFeed(merged);
     } catch (e) {
       setError(extractErrorMessage(e));
     }
   }
 
-  async function loadQueueMessagesFallback() {
+  async function loadQueueMessagesAsFeed(statusFilter = null) {
     try {
       const queuesList = await listQueues();
       const withMessages = queuesList
@@ -111,7 +115,16 @@ export function MessagesView() {
               ? `${msg.payload.slice(0, 80)}…`
               : String(msg.payload ?? "");
           const summary = payloadPreview || `消息 · ${msg.routing_key || q.name}`;
-          const status = q.consumers === 0 ? "backlog" : "consumed";
+          // 根据队列状态推断单条消息状态
+          let status = "backlog";
+          if ((q.ready || 0) > 0) {
+            status = "backlog";
+          } else if ((q.unacked || 0) > 0 || (q.consumers || 0) > 0) {
+            status = "consumed";
+          }
+          if (statusFilter && status !== statusFilter) {
+            return;
+          }
           feedItems.push({
             trace_id: `peek-${q.name}-${idx}-${Date.now()}`,
             time: new Date().toISOString(),
@@ -129,7 +142,7 @@ export function MessagesView() {
       }
       return feedItems;
     } catch (e) {
-      console.warn("从队列加载消息兜底失败", e);
+      console.warn("从队列加载消息失败", e);
       return [];
     }
   }

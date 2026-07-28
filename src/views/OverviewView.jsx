@@ -1,16 +1,21 @@
 import { useEffect, useState } from "preact/hooks";
 import { HealthBadge, StatusPill } from "../components/Badges.jsx";
 import { Term } from "../components/Term.jsx";
-import { getOverview } from "../lib/api.js";
+import { getOverview, listenQueueRefreshed } from "../lib/api.js";
 import { extractErrorMessage } from "../lib/api.js";
 
 export function OverviewView({ onOpenQueue, onNavigate }) {
   const [overview, setOverview] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
 
-  async function reload() {
-    setLoading(true);
+  async function reload(silent = false) {
+    if (silent) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     setError("");
     try {
       const data = await getOverview();
@@ -18,12 +23,28 @@ export function OverviewView({ onOpenQueue, onNavigate }) {
     } catch (e) {
       setError(extractErrorMessage(e));
     } finally {
-      setLoading(false);
+      if (silent) {
+        setRefreshing(false);
+      } else {
+        setLoading(false);
+      }
     }
   }
 
   useEffect(() => {
-    reload();
+    reload(false);
+  }, []);
+
+  useEffect(() => {
+    let unlisten;
+    listenQueueRefreshed(() => {
+      reload(true);
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => {
+      if (unlisten) unlisten();
+    };
   }, []);
 
   if (loading)
@@ -63,8 +84,21 @@ export function OverviewView({ onOpenQueue, onNavigate }) {
           <p>一眼掌握 RabbitMQ 整体健康度</p>
         </div>
         <div class="actions">
-          <button type="button" class="btn secondary" onClick={reload}>
-            刷新
+          <button
+            type="button"
+            class="btn secondary"
+            onClick={() => reload(true)}
+            disabled={refreshing}
+            aria-busy={refreshing}
+          >
+            {refreshing ? (
+              <>
+                <span class="spin" style="border-color:rgba(255,255,255,.5);border-top-color:#fff;margin-right:6px;" />
+                刷新中
+              </>
+            ) : (
+              "刷新"
+            )}
           </button>
         </div>
       </header>

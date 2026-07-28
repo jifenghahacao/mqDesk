@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "preact/hooks";
+import { SearchableSelect } from "../components/SearchableSelect.jsx";
 import {
   ackManualConsumerMessage,
   createManualConsumer,
@@ -285,19 +286,13 @@ export function ConsumerStudio() {
 
           <div class="field">
             <label>目标队列</label>
-            <select
-              class="input"
+            <SearchableSelect
               value={form.queue_name}
-              onChange={(e) => updateField("queue_name", e.target.value)}
+              options={queues.map((q) => q.name)}
+              onChange={(value) => updateField("queue_name", value)}
+              placeholder={loadingQueues ? "加载中…" : "请选择队列"}
               disabled={loadingQueues}
-            >
-              <option value="">{loadingQueues ? "加载中…" : "请选择队列"}</option>
-              {queues.map((q) => (
-                <option key={q.name} value={q.name}>
-                  {q.name}
-                </option>
-              ))}
-            </select>
+            />
           </div>
 
           <div class="field">

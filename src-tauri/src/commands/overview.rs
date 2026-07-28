@@ -1,7 +1,7 @@
 //! 总览命令
 
 use mqdesk_core::error::{AppError, AppResult};
-use mqdesk_core::models::{AlertItem, HealthStatus, Overview, OverviewStats, QueueFilter};
+use mqdesk_core::models::{AlertItem, HealthStatus, Overview, OverviewStats, Pagination, QueueFilter};
 use mqdesk_core::state::AppState;
 use std::sync::Arc;
 use tauri::State;
@@ -14,9 +14,11 @@ pub async fn get_overview(state: State<'_, Arc<AppState>>) -> AppResult<Overview
     let management = state.rabbit_management();
 
     let mgmt_overview = management.get_overview_stats().await?;
-    let queues = management.list_queues(&QueueFilter::default()).await?;
+    let paginated = management
+        .list_queues(&QueueFilter::default(), &Pagination::default())
+        .await?;
 
-    let mut queue_summaries: Vec<_> = queues.iter().map(|q| q.to_summary()).collect();
+    let mut queue_summaries: Vec<_> = paginated.items.iter().map(|q| q.to_summary()).collect();
     queue_summaries.sort_by_key(|b| std::cmp::Reverse(b.ready));
 
     let alert_count = queue_summaries

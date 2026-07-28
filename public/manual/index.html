@@ -171,6 +171,18 @@
       font-size: 14px;
     }
     .back:hover { filter: brightness(1.06); }
+    .badge {
+      display: inline-block;
+      padding: 1px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-left: 6px;
+    }
+    .badge.new {
+      background: var(--primary-soft);
+      color: var(--primary);
+    }
   </style>
 </head>
 <body>
@@ -179,7 +191,7 @@
 
     <h1>MQDesk 零基础用户操作手册</h1>
     <p class="meta">
-      <strong>版本</strong>：v0.1.0（MVP）<br>
+      <strong>版本</strong>：v0.1.0（Production Readiness）<br>
       <strong>适用对象</strong>：完全不懂 RabbitMQ、不懂命令行、第一次使用 MQDesk 的用户<br>
       <strong>阅读建议</strong>：按顺序阅读，遇到看不懂的术语可先翻到文末「附录 → 术语解释」。
     </p>
@@ -205,7 +217,10 @@
       <li>不用记命令，就能连接 RabbitMQ 服务；</li>
       <li>一眼看出队列是否堆积、有没有人消费；</li>
       <li>像发微信一样发送测试消息；</li>
-      <li>查看消息发送记录，追踪消息去向。</li>
+      <li>查看消息发送记录，追踪消息去向；</li>
+      <li>手动启动消费者，实时查看进入队列的消息内容；</li>
+      <li>监控连接与信道，排查客户端连接问题；</li>
+      <li>清空队列、管理绑定规则，完成日常运维操作。</li>
     </ul>
 
     <h3>1.2 它能帮你解决什么问题？</h3>
@@ -218,6 +233,8 @@
         <tr><td>怀疑消息没发出去</td><td>要写代码测试或查日志</td><td>点几下就能发一条测试消息</td></tr>
         <tr><td>队列消息堆积了</td><td>看不到，等问题爆发</td><td>健康状态变红/黄，提前预警</td></tr>
         <tr><td>忘了连接密码</td><td>明文写在配置文件里</td><td>本地加密保存，更安全</td></tr>
+        <tr><td>需要清空测试队列</td><td>写脚本或调接口</td><td>队列详情页一键 Purge</td></tr>
+        <tr><td>想看消息被谁消费</td><td>翻日志、写消费者</td><td>消费者工作室直接启动并查看</td></tr>
       </tbody>
     </table>
 
@@ -253,7 +270,7 @@
     <p>从发布页面下载对应系统的安装文件：</p>
     <ul>
       <li>Windows： <code>MQDesk_0.1.0_x64-setup.exe</code></li>
-      <li>麒麟 / Linux： <code>mqdesk_0.1.0_amd64.deb</code></li>
+      <li>麒麟 / Linux： <code>mqdesk_0.1.0_amd64.deb</code> 或 <code>MQDesk_0.1.0_amd64.AppImage</code></li>
     </ul>
 
     <h4>第二步：运行安装程序（Windows）</h4>
@@ -306,11 +323,14 @@
         <tr><th>按钮</th><th>名称</th><th>作用</th></tr>
       </thead>
       <tbody>
-        <tr><td>🔌 连接</td><td>连接管理</td><td>新建、编辑、删除 RabbitMQ 连接</td></tr>
+        <tr><td>🔌 连接</td><td>连接管理</td><td>新建、编辑、删除、切换 RabbitMQ 连接</td></tr>
         <tr><td>📊 总览</td><td>总览仪表盘</td><td>查看整体健康状态和关键数字</td></tr>
-        <tr><td>📋 队列</td><td>队列列表</td><td>查看所有队列及其健康状态</td></tr>
+        <tr><td>📋 队列</td><td>队列列表</td><td>查看所有队列、搜索、筛选、分页浏览</td></tr>
+        <tr><td>🖥️ 集群节点</td><td>集群节点</td><td>查看 RabbitMQ 节点运行状态与资源使用</td></tr>
+        <tr><td>👥 消费者</td><td>消费者列表</td><td>查看当前在线消费者及其消费速率</td></tr>
+        <tr><td>🧪 消费者工作室</td><td>消费者工作室</td><td>手动启动消费者，实时查看消息内容</td></tr>
         <tr><td>✉️ 消息</td><td>消息发送</td><td>发送测试消息并查看记录</td></tr>
-        <tr><td>⚙️ 设置</td><td>设置</td><td>切换主题、查看术语表、打开本手册</td></tr>
+        <tr><td>⚙️ 设置</td><td>设置</td><td>切换主题、自动刷新、查看术语表、打开本手册</td></tr>
       </tbody>
     </table>
 
@@ -414,6 +434,9 @@
       </tbody>
     </table>
 
+    <h4>自动刷新</h4>
+    <p>总览页默认会自动刷新。你可以在「设置 → 自动刷新」中开启/关闭，或调整刷新间隔。关闭后数字不会自动更新，需要手动切换页面或点击刷新按钮。</p>
+
     <h3>4.3 队列列表</h3>
     <h4>是什么？</h4>
     <p>「队列」页面列出当前 RabbitMQ 中的所有队列，并显示每个队列的健康状态。</p>
@@ -422,14 +445,19 @@
     <h4>怎么用？</h4>
     <ol>
       <li>点击侧边栏「队列」；</li>
-      <li>页面会显示所有队列；</li>
-      <li>队列按健康状态排序，红色/黄色会排在前面；</li>
-      <li>在顶部搜索框输入队列名，可以过滤列表。</li>
+      <li>页面会显示所有队列，默认按健康状态排序，红色/黄色会排在前面；</li>
+      <li>在顶部搜索框输入队列名，可以按名称过滤；</li>
+      <li>使用「类型」下拉框可按队列类型（classic / quorum）筛选；</li>
+      <li>使用「健康」下拉框可按健康状态筛选；</li>
+      <li>点击表头翻页按钮可浏览更多队列。</li>
     </ol>
     <div class="shot">
       <img src="screenshots/queue-list.png" alt="队列列表">
-      <p>图 4-3：队列列表页面</p>
+      <p>图 4-3：队列列表——支持搜索、筛选、分页</p>
     </div>
+
+    <h4>虚拟滚动与大数据量</h4>
+    <p>当队列数量很多时，列表采用虚拟滚动技术，只渲染当前可见的行，保证首屏加载快、滚动流畅。你无需担心一次性加载几万个队列会卡顿。</p>
 
     <h4>查看队列详情</h4>
     <ol>
@@ -440,7 +468,7 @@
 
     <h3>4.4 队列详情</h3>
     <h4>是什么？</h4>
-    <p>「队列详情」展示某个具体队列的实时数据，包括消息数量、消费者数量、消息速率等。</p>
+    <p>「队列详情」展示某个具体队列的实时数据，包括消息数量、消费者数量、消息速率、绑定规则等。</p>
     <h4>为什么需要它？</h4>
     <p>当你发现某个队列健康状态异常（红色/黄色），需要进入详情页看具体数字，判断问题有多严重。</p>
     <h4>怎么用？</h4>
@@ -452,6 +480,7 @@
         <tr><td>健康状态卡片</td><td>显示当前队列健康状态</td></tr>
         <tr><td>核心指标</td><td>待消费、处理中、消费者数、消息速率</td></tr>
         <tr><td>速率折线图</td><td>近一段时间的消息流入/流出趋势</td></tr>
+        <tr><td>绑定规则</td><td>查看与该队列绑定的交换机及路由键</td></tr>
         <tr><td>抓取预览</td><td>查看队列前几条消息内容，不会真正消费</td></tr>
       </tbody>
     </table>
@@ -468,7 +497,131 @@
       <li>消息内容会显示在下方，原来的消息仍保留在队列中。</li>
     </ol>
 
-    <h3>4.5 消息发送</h3>
+    <h3>4.5 队列清空（Purge）<span class="badge new">新功能</span></h3>
+    <h4>是什么？</h4>
+    <p>「清空队列」用于删除队列里的所有消息，但保留队列本身。</p>
+    <h4>为什么需要它？</h4>
+    <p>测试环境经常有大量脏数据，Purge 可以一键清理，不用删除队列再重建。</p>
+    <h4>怎么用？</h4>
+    <ol>
+      <li>进入队列详情页；</li>
+      <li>点击右上角「清空」按钮；</li>
+      <li>在二次确认弹窗中点击「确定」；</li>
+      <li>等待几秒，队列消息数会归零。</li>
+    </ol>
+    <blockquote>
+      <strong>注意</strong>：Purge 会永久删除消息，生产环境请谨慎操作。
+    </blockquote>
+
+    <h3>4.6 绑定管理（Bindings）<span class="badge new">新功能</span></h3>
+    <h4>是什么？</h4>
+    <p>「绑定规则」定义了交换机如何把消息路由到队列。在 MQDesk 中，你可以查看某个队列的所有绑定，并删除不再需要的绑定。</p>
+    <h4>为什么需要它？</h4>
+    <p>消息没有进入预期队列时，往往是绑定规则配错了。在这里可以直接看到“哪个交换机通过什么路由键绑到了这个队列”。</p>
+    <h4>怎么用？</h4>
+    <ol>
+      <li>进入队列详情页；</li>
+      <li>切换到「绑定」标签页；</li>
+      <li>列表会显示 Source（交换机）、Routing Key（路由键）、Arguments（参数）；</li>
+      <li>点击某行右侧的「删除」按钮可解绑（会二次确认）。</li>
+    </ol>
+    <div class="shot">
+      <img src="screenshots/queue-detail-bindings.png" alt="绑定管理">
+      <p>图 4-5：队列详情中的绑定管理</p>
+    </div>
+    <blockquote>
+      <strong>注意</strong>：删除绑定后，交换机将不再把匹配的消息路由到该队列。如果是生产队列，请确认影响后再操作。
+    </blockquote>
+
+    <h3>4.7 集群节点<span class="badge new">新功能</span></h3>
+    <h4>是什么？</h4>
+    <p>「集群节点」页面展示 RabbitMQ 集群中每个节点的运行状态、内存使用、磁盘剩余、文件描述符、进程数等核心指标。</p>
+    <h4>为什么需要它？</h4>
+    <p>当整体性能下降或出现告警时，需要先确认每个节点是否健康、资源是否耗尽。</p>
+    <h4>怎么用？</h4>
+    <ol>
+      <li>点击侧边栏「集群节点」；</li>
+      <li>页面列出所有节点，绿色表示运行中，红色表示离线；</li>
+      <li>查看内存占用、磁盘剩余、运行时长等关键字段；</li>
+      <li>如果某个节点状态异常，优先检查该节点的资源使用情况。</li>
+    </ol>
+    <div class="shot">
+      <img src="screenshots/nodes-view.png" alt="集群节点">
+      <p>图 4-6：集群节点页面</p>
+    </div>
+
+    <h3>4.8 消费者列表<span class="badge new">新功能</span></h3>
+    <h4>是什么？</h4>
+    <p>「消费者列表」展示当前所有在线消费者，包括消费者标签、所属队列、客户端地址、连接名称、消息速率、Ack 模式、Prefetch 数量等。</p>
+    <h4>为什么需要它？</h4>
+    <p>队列状态异常时，可以快速判断“到底有没有人在消费这个队列”，以及消费速度是多少。</p>
+    <h4>怎么用？</h4>
+    <ol>
+      <li>点击侧边栏「消费者」；</li>
+      <li>列表显示所有活跃消费者；</li>
+      <li>在搜索框输入队列名，可筛选出特定队列的消费者；</li>
+      <li>通过消息速率判断消费是否健康。</li>
+    </ol>
+    <div class="shot">
+      <img src="screenshots/consumers-list.png" alt="消费者列表">
+      <p>图 4-7：消费者列表页面</p>
+    </div>
+
+    <h3>4.9 连接与信道监控<span class="badge new">新功能</span></h3>
+    <h4>是什么？</h4>
+    <p>「连接与信道」页面展示当前连接到 RabbitMQ 的所有客户端，以及每个连接下的信道列表。</p>
+    <h4>为什么需要它？</h4>
+    <p>当你怀疑某个服务没有正确连接，或者连接数过多时，可以在这里看到每个连接的 IP、协议、在线时长、信道数量、消费者数、消息速率等。</p>
+    <h4>怎么用？</h4>
+    <ol>
+      <li>点击侧边栏「连接与信道」；</li>
+      <li>页面列出所有活跃连接；</li>
+      <li>点击某行连接可展开/折叠，查看该连接下的信道；</li>
+      <li>信道信息包括编号、消费者数、Prefetch、发布/投递/确认速率。</li>
+    </ol>
+    <div class="shot">
+      <img src="screenshots/connections-channels.png" alt="连接与信道监控">
+      <p>图 4-8：连接与信道监控页面</p>
+    </div>
+
+    <h3>4.10 消费者工作室（Consumer Studio）<span class="badge new">新功能</span></h3>
+    <h4>是什么？</h4>
+    <p>「消费者工作室」让你不用写代码，就能手动启动一个消费者，实时查看队列里的消息内容。</p>
+    <h4>为什么需要它？</h4>
+    <p>排查问题时，经常需要确认“消息到底长什么样”。在这里启动一个临时消费者，即可看到完整消息体、Headers，并支持手动 Ack。</p>
+    <h4>怎么用？</h4>
+    <ol>
+      <li>点击侧边栏「消费者工作室」；</li>
+      <li>在右侧表单填写消费者配置：</li>
+    </ol>
+    <table>
+      <thead>
+        <tr><th>字段</th><th>说明</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>名称</td><td>给这个消费者起个名字，方便识别</td></tr>
+        <tr><td>目标队列</td><td>选择要消费的队列</td></tr>
+        <tr><td>模式</td><td>async（持续消费）或 preview（只查看不确认）</td></tr>
+        <tr><td>Prefetch</td><td>每次从 RabbitMQ 取多少条消息到本地，默认 10</td></tr>
+        <tr><td>自动 Ack</td><td>开启后消息进入即自动确认；关闭后需要手动 Ack</td></tr>
+        <tr><td>过滤条件</td><td>只显示 payload 或 headers 匹配条件的消息</td></tr>
+      </tbody>
+    </table>
+    <ol start="3">
+      <li>点击「创建消费者」；</li>
+      <li>在列表中点击「启动」；</li>
+      <li>当队列有新消息时，左侧消息流会实时显示；</li>
+      <li>如需停止，点击「暂停」或「销毁」。</li>
+    </ol>
+    <div class="shot">
+      <img src="screenshots/consumer-studio.png" alt="消费者工作室">
+      <p>图 4-9：消费者工作室——手动启动消费者并查看消息</p>
+    </div>
+    <blockquote>
+      <strong>提示</strong>：预览模式（preview）不会真正消费消息，消息会重新入队，适合排查问题。async 模式会真实消费，请谨慎用于生产队列。
+    </blockquote>
+
+    <h3>4.11 消息发送</h3>
     <h4>是什么？</h4>
     <p>「消息」页面用于向 RabbitMQ 发送测试消息，并查看发送历史。</p>
     <h4>为什么需要它？</h4>
@@ -490,21 +643,43 @@
     </ol>
     <div class="shot">
       <img src="screenshots/publish-message.png" alt="消息发送">
-      <p>图 4-5：消息发送页面</p>
+      <p>图 4-10：消息发送页面</p>
     </div>
 
     <h4>查看发送记录</h4>
     <p>发送成功后，页面下方的消息流会新增一条记录，包含时间、队列、状态、摘要。</p>
 
-    <h3>4.6 设置</h3>
+    <h3>4.12 队列消息探查<span class="badge new">新功能</span></h3>
+    <h4>是什么？</h4>
+    <p>「队列消息探查」用于查看指定队列中当前真实存在的消息内容，包括 Payload、Headers、Exchange、Routing Key 等，且<strong>不会真正消费</strong>消息。</p>
+    <h4>为什么需要它？</h4>
+    <p>业务程序发送的消息进入队列后，你想确认消息内容是否正确、是否被正常投递，但又不想触发真实消费。探查功能通过 RabbitMQ Management API 抓取队列前 N 条消息并立即重新入队，满足这个需求。</p>
+    <h4>怎么用？</h4>
+    <ol>
+      <li>点击侧边栏「消息」；</li>
+      <li>切换到「队列消息探查」标签页；</li>
+      <li>选择要探查的队列；</li>
+      <li>输入想查看的消息数量（1~100）；</li>
+      <li>点击「探查」按钮；</li>
+      <li>页面会显示该队列的待消费/处理中/总数/消费者数，以及消息列表和在线消费者信息。</li>
+    </ol>
+    <div class="shot">
+      <img src="screenshots/message-inspect.png" alt="队列消息探查">
+      <p>图 4-11：队列消息探查页面——查看真实消息及在线消费者</p>
+    </div>
+    <blockquote>
+      <strong>提示</strong>：探查不会删除或消费消息，适合用来排查“消息到底长什么样”“有没有被投递到正确队列”。如果想看消息是否被消费、被谁消费，可结合「消费者列表」和「消费者工作室」进一步确认。
+    </blockquote>
+
+    <h3>4.13 设置</h3>
     <h4>是什么？</h4>
     <p>「设置」页面用于调整应用偏好和查看帮助信息。</p>
     <h4>为什么需要它？</h4>
-    <p>你可以在这里切换界面主题、学习 RabbitMQ 术语、打开本操作手册。</p>
+    <p>你可以在这里切换界面主题、控制自动刷新、学习 RabbitMQ 术语、打开本操作手册。</p>
     <h4>怎么用？</h4>
     <div class="shot">
       <img src="screenshots/settings-page.png" alt="设置页面">
-      <p>图 4-6：设置页面</p>
+      <p>图 4-12：设置页面</p>
     </div>
     <h4>切换主题</h4>
     <ol>
@@ -513,8 +688,27 @@
       <li>点击「浅色」「暗黑」或「跟随系统」；</li>
       <li>界面主题会立即切换。</li>
     </ol>
+    <h4>自动刷新开关</h4>
+    <ol>
+      <li>在设置页找到「自动刷新」区域；</li>
+      <li>打开/关闭开关；</li>
+      <li>选择刷新间隔（如 5 秒、10 秒、30 秒）；</li>
+      <li>总览页和队列列表会按此间隔自动拉取最新数据。</li>
+    </ol>
     <h4>查看术语表 / 操作手册</h4>
     <p>设置页下方有术语表，遇到不懂的词可以在这里查看大白话解释。点击「查看操作手册」可打开本手册。</p>
+
+    <h3>4.14 Management API 暂不可用提示<span class="badge new">新功能</span></h3>
+    <h4>是什么？</h4>
+    <p>当 RabbitMQ Management API 访问失败（如网络断开、服务重启、认证过期）时，页面顶部会出现黄色警告横幅。</p>
+    <h4>为什么需要它？</h4>
+    <p>提醒你现在看到的数据可能是缓存，不是最新值，避免你根据过时的数字做判断。</p>
+    <h4>怎么用？</h4>
+    <p>看到横幅后，检查网络连接或 RabbitMQ 服务状态。恢复后，MQDesk 会自动刷新并隐藏横幅。</p>
+    <div class="shot">
+      <img src="screenshots/stale-banner.png" alt="暂不可用提示">
+      <p>图 4-13：Management API 暂不可用时的降级提示</p>
+    </div>
 
     <h2 id="s5">5. 常见问题解答</h2>
 
@@ -552,6 +746,18 @@
     <p><strong>原因</strong>：早期版本可能存在主题适配不完整。<br>
     <strong>解决</strong>：切换到浅色模式使用，或等待后续更新。</p>
 
+    <h4>Q10：清空队列后消息数没有立即变成 0？</h4>
+    <p><strong>原因</strong>：RabbitMQ Management API 的统计信息有秒级延迟。<br>
+    <strong>解决</strong>：稍等几秒再刷新，或观察自动刷新后的数字。</p>
+
+    <h4>Q11：消费者工作室启动后看不到消息？</h4>
+    <p><strong>原因</strong>：队列里没有新消息，或过滤条件不匹配。<br>
+    <strong>解决</strong>：确认队列有消息进入；检查过滤条件是否正确；切换为 preview 模式避免真实消费。</p>
+
+    <h4>Q12：连接与信道页面为空？</h4>
+    <p><strong>原因</strong>：当前没有客户端连接到 RabbitMQ。<br>
+    <strong>解决</strong>：启动一个生产者或消费者程序，刷新后即可看到连接。</p>
+
     <h2 id="s6">6. 附录</h2>
 
     <h3>6.1 快捷键列表</h3>
@@ -576,13 +782,19 @@
         <tr><td>RabbitMQ</td><td>一个负责在不同程序之间传递消息的软件</td></tr>
         <tr><td>队列（Queue）</td><td>存放消息的“桶”，消费者从这里取消息</td></tr>
         <tr><td>交换机（Exchange）</td><td>消息的“分拣中心”，决定消息该进哪个队列</td></tr>
+        <tr><td>绑定（Binding）</td><td>交换机和队列之间的“连线规则”</td></tr>
         <tr><td>路由键（Routing Key）</td><td>贴在消息上的“地址标签”</td></tr>
         <tr><td>消费者（Consumer）</td><td>从队列取消息并处理的程序</td></tr>
         <tr><td>待消费（Ready）</td><td>已经躺在队列里、等着被取的消息</td></tr>
         <tr><td>处理中（Unacked）</td><td>已被取走但还没确认处理完的消息</td></tr>
         <tr><td>虚拟空间（vhost）</td><td>一块隔离的“房间”，不同项目互不干扰</td></tr>
         <tr><td>AMQP</td><td>RabbitMQ 用来传输消息的协议</td></tr>
+        <tr><td>信道（Channel）</td><td>连接里的一个“虚拟通道”，大部分操作都在信道里完成</td></tr>
+        <tr><td>Prefetch</td><td>消费者一次预取多少条消息，避免一次性压垮消费者</td></tr>
+        <tr><td>Ack</td><td>消费者确认“这条消息我已处理完”</td></tr>
+        <tr><td>Purge</td><td>清空队列里的所有消息，但保留队列</td></tr>
         <tr><td>Publisher Confirm</td><td>发送消息后，RabbitMQ 给的“收到回执”</td></tr>
+        <tr><td>Management API</td><td>RabbitMQ 提供的 HTTP 接口，MQDesk 通过它获取数据</td></tr>
       </tbody>
     </table>
 
@@ -596,7 +808,8 @@
 
     <blockquote>
       <strong>手册版本记录</strong><br>
-      v0.1.0：首次编写，对应 MQDesk MVP 版本。
+      v0.1.0：首次编写，对应 MQDesk MVP 版本。<br>
+      v0.2.0：补齐队列 Purge、绑定管理、连接/信道监控、消费者工作室、自动刷新、降级提示等功能说明。
     </blockquote>
   </div>
 </body>

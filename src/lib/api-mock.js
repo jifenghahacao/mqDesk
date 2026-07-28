@@ -101,9 +101,34 @@ const MESSAGE_FEED = [
 ];
 
 const MANUAL_CONSUMERS = [
-  { id: "mc-1", name: "测试-订单消费者", queue_name: "order.created", mode: "sync", status: "running", created_at: Date.now() - 3600000, consumed_count: 12, ack_count: 12 },
-  { id: "mc-2", name: "测试-短信预览", queue_name: "notify.sms", mode: "async", status: "paused", created_at: Date.now() - 7200000, consumed_count: 45, ack_count: 40 },
+  { id: "mc-1", name: "测试-订单消费者", queue_name: "order.created", mode: "async", prefetch_count: 10, auto_ack: false, status: "running", created_at: Date.now() - 3600000, consumed_count: 12, filtered_count: 0, ack_count: 12 },
+  { id: "mc-2", name: "测试-短信预览", queue_name: "notify.sms", mode: "sync", prefetch_count: 1, auto_ack: true, status: "paused", created_at: Date.now() - 7200000, consumed_count: 45, filtered_count: 2, ack_count: 40 },
 ];
+
+const BINDINGS = {
+  "order.created": [
+    { source: "order.exchange", routing_key: "order.created", arguments: {} },
+    { source: "dead.letter.exchange", routing_key: "order.created.dlx", arguments: { "x-dead-letter-exchange": "dead.letter.exchange" } },
+  ],
+  "notify.sms": [{ source: "notify.exchange", routing_key: "sms", arguments: {} }],
+  "notify.email": [{ source: "notify.exchange", routing_key: "email", arguments: {} }],
+};
+
+const RABBIT_CONNECTIONS = [
+  { name: "192.168.1.12:49321", peer_address: "192.168.1.12:49321", peer_host: "192.168.1.12", protocol: "AMQP 0-9-1", channels: 2, consumers: 4, connected_seconds: 8640 },
+  { name: "192.168.1.15:51208", peer_address: "192.168.1.15:51208", peer_host: "192.168.1.15", protocol: "AMQP 0-9-1", channels: 1, consumers: 1, connected_seconds: 2700 },
+  { name: "127.0.0.1:54123", peer_address: "127.0.0.1:54123", peer_host: "127.0.0.1", protocol: "Management", channels: 0, consumers: 0, connected_seconds: 720 },
+];
+
+const CHANNELS = {
+  "192.168.1.12:49321": [
+    { number: 1, connection_name: "192.168.1.12:49321", consumers: 2, prefetch_count: 10, publish_rate: 0, deliver_rate: 45, ack_rate: 45 },
+    { number: 2, connection_name: "192.168.1.12:49321", consumers: 0, prefetch_count: 0, publish_rate: 12, deliver_rate: 0, ack_rate: 0 },
+  ],
+  "192.168.1.15:51208": [
+    { number: 1, connection_name: "192.168.1.15:51208", consumers: 1, prefetch_count: 5, publish_rate: 0, deliver_rate: 8, ack_rate: 8 },
+  ],
+};
 
 const ALERT_RULES = [
   { metric: "ready_count", operator: "gt", threshold: 1000, enabled: true },
@@ -297,6 +322,7 @@ export async function peekQueueMessages(queueName, count = 20) {
     payload_size: 120 + i * 10,
     payload: JSON.stringify({ orderId: 20931 + i, amount: 9900 + i * 100, status: "pending" }),
     headers: { "x-trace-id": `trace-${i}` },
+    redelivered: i === 0,
   }));
 }
 
@@ -381,6 +407,58 @@ export async function exportQueueAuditLogs(filter, path) {
   return true;
 }
 
+export async function listQueuesPaginated(filter = {}, pagination = {}) {
+  await delay(300);
+  let list = [...QUEUES];
+  if (filter.search) {
+    const kw = filter.search.toLowerCase();
+    list = list.filter((q) => q.name.toLowerCase().includes(kw));
+  }
+  if (filter.queue_type && filter.queue_type !== "all") {
+    list = list.filter((q) => q.queue_type === filter.queue_type);
+  }
+  if (filter.health && filter.health !== "all") {
+    list = list.filter((q) => q.health === filter.health);
+  }
+  const page = pagination.page || 1;
+  const pageSize = pagination.page_size || 50;
+  const total = list.length;
+  const items = list.slice((page - 1) * pageSize, page * pageSize);
+  return { items, total, page, page_size: pageSize };
+}
+
+export async function listRabbitConnections(pagination = {}) {
+  await delay(300);
+  return { items: RABBIT_CONNECTIONS, total: RABBIT_CONNECTIONS.length, page: pagination.page || 1, page_size: pagination.page_size || 50 };
+}
+
+export async function listChannels(connectionName = null, pagination = {}) {
+  await delay(300);
+  const items = connectionName ? CHANNELS[connectionName] || [] : Object.values(CHANNELS).flat();
+  return { items, total: items.length, page: pagination.page || 1, page_size: pagination.page_size || 50 };
+}
+
+export async function listQueueBindings(queueName) {
+  await delay();
+  return BINDINGS[queueName] || [];
+}
+
+export async function deleteQueueBinding(queueName, binding) {
+  await delay();
+  return true;
+}
+
+export async function purgeQueue(name) {
+  await delay();
+  const q = QUEUES.find((x) => x.name === name);
+  if (q) {
+    q.ready = 0;
+    q.unacked = 0;
+    q.total = 0;
+  }
+  return true;
+}
+
 export function extractErrorMessage(error) {
   if (typeof error === "string") return error;
   if (error?.message) return error.message;
@@ -391,4 +469,27 @@ export function extractErrorMessage(error) {
   }
 }
 
-// 窗口控制在浏览器中会静默失败，已在 api.js 中处理。
+// 窗口控制在浏览器中静默失败
+export async function minimizeWindow() {}
+export async function toggleMaximizeWindow() {}
+export async function closeWindow() {}
+export async function startDragging() {}
+
+// 事件监听在浏览器中无需处理
+export async function listenQueueRefreshed(callback) {
+  return () => {};
+}
+
+export async function listenManagementStale(callback) {
+  return () => {};
+}
+
+export async function setRefreshEnabled(enabled) {
+  await delay();
+  return true;
+}
+
+export async function setRefreshInterval(ms) {
+  await delay();
+  return true;
+}

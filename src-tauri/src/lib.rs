@@ -21,9 +21,30 @@
 
 mod commands;
 
+use mqdesk_core::models::QueueRefreshEvent;
+use mqdesk_core::rabbit::RefreshEventEmitter;
 use mqdesk_core::AppState;
 use std::sync::Arc;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
+
+/// 将刷新事件通过 Tauri Event 投递到前端主窗口。
+struct TauriEmitter {
+    app_handle: tauri::AppHandle,
+}
+
+impl RefreshEventEmitter for TauriEmitter {
+    fn emit_queue_refreshed(&self, event: QueueRefreshEvent) {
+        let _ = self
+            .app_handle
+            .emit_to("main", "queue-refreshed", &event);
+    }
+
+    fn emit_management_stale(&self, is_stale: bool) {
+        let _ = self
+            .app_handle
+            .emit_to("main", "management-stale", &serde_json::json!({ "is_stale": is_stale }));
+    }
+}
 
 /// 将 PNG 字节解码为 Tauri 托盘图标可用的 RGBA Image
 fn load_tray_icon(png_bytes: &[u8]) -> tauri::image::Image<'static> {
@@ -66,8 +87,11 @@ pub fn run() {
             commands::connection::get_active_connection,
             commands::connection::get_connection_status,
             commands::connection::restore_last_active,
+            commands::connection::list_rabbit_connections,
             // 集群节点
             commands::node::list_nodes,
+            // 信道
+            commands::channel::list_channels,
             // 消费者
             commands::consumer::list_consumers,
             commands::consumer::create_manual_consumer,
@@ -90,8 +114,12 @@ pub fn run() {
             // 审计
             commands::audit::list_queue_audit_logs,
             commands::audit::export_queue_audit_logs,
+            // 绑定
+            commands::binding::list_queue_bindings,
+            commands::binding::delete_queue_binding,
             // 队列
             commands::queue::list_queues,
+            commands::queue::list_queues_paginated,
             commands::queue::get_queue_detail,
             commands::queue::grab_preview,
             commands::queue::peek_queue_messages,
@@ -100,6 +128,10 @@ pub fn run() {
             commands::queue::delete_queue,
             commands::queue::pause_queue,
             commands::queue::resume_queue,
+            commands::queue::purge_queue,
+            // 自动刷新
+            commands::refresh::set_refresh_enabled,
+            commands::refresh::set_refresh_interval,
             // 消息
             commands::message::publish_message,
             commands::message::list_message_feed,
@@ -114,6 +146,12 @@ pub fn run() {
             }
         })
         .setup(move |app| {
+            // 注入 Tauri 事件发射器，使后台刷新任务能推送事件到前端
+            let emitter = Arc::new(TauriEmitter {
+                app_handle: app.handle().clone(),
+            });
+            state_for_setup.refresh_task.set_emitter(emitter);
+
             // 用 Tauri 的 async runtime 启动消息状态追踪后台任务
             // （不能用 tokio::spawn，因为 Tauri 环境下没有独立的 Tokio runtime）
             let state = state_for_setup.clone();

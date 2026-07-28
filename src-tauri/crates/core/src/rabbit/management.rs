@@ -9,13 +9,17 @@
 
 use crate::error::{AppError, AppResult};
 use crate::models::{
-    ConsumerInfo, NodeInfo, PreviewMessage, QueueConnectionInfo, QueueDetail, QueueFilter, QueueMessage,
-    QueueSummary, RateHistory,
+    BindingInfo, ChannelInfo, ConnectionInfo, ConsumerInfo, NodeInfo, Paginated, Pagination, PreviewMessage,
+    QueueConnectionInfo, QueueDetail, QueueFilter, QueueMessage, QueueSummary, RateHistory,
 };
+use crate::rabbit::rate_limiter::ManagementRateLimiter;
 use base64::Engine;
+use parking_lot::RwLock;
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 pub struct ManagementClient {
@@ -23,6 +27,12 @@ pub struct ManagementClient {
     base_url: String,
     auth_header: String,
     vhost: String,
+    rate_limiter: Arc<ManagementRateLimiter>,
+    is_stale: AtomicBool,
+    overview_cache: RwLock<Option<ManagementOverview>>,
+    nodes_cache: RwLock<Option<Vec<ManagementNode>>>,
+    consumers_cache: RwLock<Option<Vec<ConsumerInfo>>>,
+    exchanges_cache: RwLock<Option<Vec<ManagementExchange>>>,
 }
 
 impl ManagementClient {
@@ -52,10 +62,21 @@ impl ManagementClient {
             base_url,
             auth_header,
             vhost: vhost.to_string(),
+            rate_limiter: Arc::new(ManagementRateLimiter::default()),
+            is_stale: AtomicBool::new(false),
+            overview_cache: RwLock::new(None),
+            nodes_cache: RwLock::new(None),
+            consumers_cache: RwLock::new(None),
+            exchanges_cache: RwLock::new(None),
         }
     }
 
-    async fn get_json<T: for<'de> Deserialize<'de>>(&self, path: &str) -> AppResult<T> {
+    /// 当前是否处于降级（stale）状态
+    pub fn is_stale(&self) -> bool {
+        self.is_stale.load(Ordering::SeqCst)
+    }
+
+    async fn _get_json_raw<T: for<'de> Deserialize<'de>>(&self, path: &str) -> AppResult<T> {
         let url = format!("{}{}", self.base_url, path);
         let response = self
             .client
@@ -81,11 +102,43 @@ impl ManagementClient {
         Ok(body)
     }
 
+    /// 带限流的 GET 请求
+    async fn get_json<T: for<'de> Deserialize<'de>>(&self, path: &str) -> AppResult<T> {
+        self.rate_limiter.acquire().await;
+        self._get_json_raw(path).await
+    }
+
+    /// 带限流与降级缓存的 GET 请求
+    async fn get_json_with_fallback<T: for<'de> Deserialize<'de> + Clone>(
+        &self,
+        path: &str,
+        cache: &RwLock<Option<T>>,
+    ) -> AppResult<T> {
+        self.rate_limiter.acquire().await;
+        match self._get_json_raw::<T>(path).await {
+            Ok(data) => {
+                *cache.write() = Some(data.clone());
+                self.is_stale.store(false, Ordering::SeqCst);
+                Ok(data)
+            }
+            Err(e) => {
+                if let Some(cached) = cache.read().clone() {
+                    log::warn!("Management API 失败，返回缓存数据: {}", e);
+                    self.is_stale.store(true, Ordering::SeqCst);
+                    Ok(cached)
+                } else {
+                    Err(e)
+                }
+            }
+        }
+    }
+
     async fn post_json<B: Serialize, T: for<'de> Deserialize<'de>>(
         &self,
         path: &str,
         body: &B,
     ) -> AppResult<T> {
+        self.rate_limiter.acquire().await;
         let url = format!("{}{}", self.base_url, path);
         let response = self
             .client
@@ -118,6 +171,7 @@ impl ManagementClient {
         path: &str,
         body: &B,
     ) -> AppResult<()> {
+        self.rate_limiter.acquire().await;
         let url = format!("{}{}", self.base_url, path);
         let response = self
             .client
@@ -144,6 +198,7 @@ impl ManagementClient {
     }
 
     async fn delete_no_body(&self, path: &str) -> AppResult<()> {
+        self.rate_limiter.acquire().await;
         let url = format!("{}{}", self.base_url, path);
         let response = self
             .client
@@ -172,16 +227,36 @@ impl ManagementClient {
         Ok(resp.name)
     }
 
-    /// 拉取总览数据
+    /// 拉取总览数据（带降级缓存）
     pub async fn get_overview_stats(&self) -> AppResult<ManagementOverview> {
-        self.get_json("/api/overview").await
+        self.get_json_with_fallback("/api/overview", &self.overview_cache)
+            .await
     }
 
-    /// 列出当前 vhost 的队列，可选按名称前缀过滤（服务端只支持 name 过滤）
-    pub async fn list_queues(&self, filter: &QueueFilter) -> AppResult<Vec<ManagementQueue>> {
+    /// 列出当前 vhost 的队列，支持分页与客户端过滤（服务端只支持 name 过滤）
+    pub async fn list_queues(
+        &self,
+        filter: &QueueFilter,
+        pagination: &Pagination,
+    ) -> AppResult<Paginated<ManagementQueue>> {
         let search = filter.search.trim().to_lowercase();
-        let path = format!("/api/queues/{}", urlencoding(&self.vhost));
-        let mut queues: Vec<ManagementQueue> = self.get_json(&path).await?;
+        let path = format!(
+            "/api/queues/{}?page={}&page_size={}",
+            urlencoding(&self.vhost),
+            pagination.page,
+            pagination.page_size
+        );
+        // 分页结果不适合写入完整缓存，避免污染 queues_cache
+        let response: QueuesResponse = self.get_json(&path).await?;
+        // 列表拉取成功说明 Management API 已恢复，清除 stale 标记
+        self.is_stale.store(false, Ordering::SeqCst);
+        let (mut queues, mut total) = match response {
+            QueuesResponse::Array(qs) => {
+                let total = qs.len() as u64;
+                (qs, total)
+            }
+            QueuesResponse::Paginated(p) => (p.items, p.filtered_count.max(p.total_count)),
+        };
 
         if !search.is_empty() {
             queues.retain(|q| q.name.to_lowercase().contains(&search));
@@ -190,7 +265,17 @@ impl ManagementClient {
             queues.retain(|q| q.queue_type == filter.queue_type);
         }
 
-        Ok(queues)
+        // 如果服务端未返回有效总数（纯数组或旧版响应），用过滤后的当前页数量兜底。
+        if total == 0 {
+            total = queues.len() as u64;
+        }
+
+        Ok(Paginated {
+            items: queues,
+            total,
+            page: pagination.page,
+            page_size: pagination.page_size,
+        })
     }
 
     /// 取队列详情
@@ -271,6 +356,59 @@ impl ManagementClient {
             "name": name,
         });
         self.put_json(&path, &body).await
+    }
+
+    /// 清空队列消息（保留队列元数据）
+    pub async fn purge_queue(&self, name: &str) -> AppResult<()> {
+        let path = format!(
+            "/api/queues/{}/{}/contents",
+            urlencoding(&self.vhost),
+            urlencoding(name)
+        );
+        self.delete_no_body(&path).await
+    }
+
+    /// 列出指定队列的绑定
+    pub async fn list_queue_bindings(&self, queue_name: &str) -> AppResult<Vec<BindingInfo>> {
+        let path = format!(
+            "/api/queues/{}/{}/bindings",
+            urlencoding(&self.vhost),
+            urlencoding(queue_name)
+        );
+        let raw: Vec<ManagementBinding> = self.get_json(&path).await?;
+        Ok(raw
+            .into_iter()
+            .map(|b| BindingInfo {
+                source: b.source,
+                vhost: b.vhost,
+                destination: b.destination,
+                destination_type: b.destination_type,
+                routing_key: b.routing_key,
+                arguments: b.arguments,
+                properties_key: b.properties_key,
+            })
+            .collect())
+    }
+
+    /// 删除绑定
+    ///
+    /// RabbitMQ API: DELETE /api/bindings/{vhost}/e/{source}/{destination_type}/{destination}/{properties_key}
+    pub async fn delete_binding(&self, binding: &BindingInfo) -> AppResult<()> {
+        // Management API 删除路径中 destination_type 需用缩写：queue -> q，exchange -> e
+        let dest_type = match binding.destination_type.as_str() {
+            "queue" => "q",
+            "exchange" => "e",
+            other => other,
+        };
+        let path = format!(
+            "/api/bindings/{}/e/{}/{}/{}/{}",
+            urlencoding(&binding.vhost),
+            urlencoding(&binding.source),
+            dest_type,
+            urlencoding(&binding.destination),
+            urlencoding(&binding.properties_key)
+        );
+        self.delete_no_body(&path).await
     }
 
     /// 通过 Policy 修改队列可改参数
@@ -375,20 +513,169 @@ impl ManagementClient {
         self.post_json(&path, &body).await
     }
 
-    /// 列出交换机
+    /// 列出交换机（带降级缓存）
     pub async fn list_exchanges(&self) -> AppResult<Vec<ManagementExchange>> {
         let path = format!("/api/exchanges/{}", urlencoding(&self.vhost));
-        self.get_json(&path).await
+        self.get_json_with_fallback(&path, &self.exchanges_cache).await
     }
 
-    /// 列出集群节点
+    /// 列出集群节点（带降级缓存）
     pub async fn list_nodes(&self) -> AppResult<Vec<NodeInfo>> {
-        let raw: Vec<ManagementNode> = self.get_json("/api/nodes").await?;
+        let raw: Vec<ManagementNode> =
+            self.get_json_with_fallback("/api/nodes", &self.nodes_cache).await?;
         Ok(raw.into_iter().map(into_node_info).collect())
     }
 
-    /// 列出当前 vhost 的消费者，并补充连接时长与队列消费速率
+    /// 列出当前 vhost 的活跃连接（支持分页）
+    pub async fn list_connections(
+        &self,
+        pagination: &Pagination,
+    ) -> AppResult<Paginated<ConnectionInfo>> {
+        // RabbitMQ /api/connections 返回所有 vhost 的连接；按 vhost 在客户端过滤
+        let path = format!(
+            "/api/connections?page={}&page_size={}",
+            pagination.page, pagination.page_size
+        );
+        let response: ConnectionsResponse = self.get_json(&path).await?;
+        let (raw, total) = match response {
+            ConnectionsResponse::Array(arr) => {
+                let total = arr.len() as u64;
+                (arr, total)
+            }
+            ConnectionsResponse::Paginated(p) => (
+                p.items,
+                p.filtered_count.max(p.total_count),
+            ),
+        };
+        let raw: Vec<ManagementConnection> = raw
+            .into_iter()
+            .filter(|c| c.vhost == self.vhost)
+            .collect();
+        let total = total.max(raw.len() as u64);
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+
+        let items: Vec<ConnectionInfo> = raw
+            .into_iter()
+            .map(|c| {
+                let connected_seconds = if c.connected_at > 0 {
+                    now_ms.saturating_sub(c.connected_at) / 1000
+                } else {
+                    0
+                };
+                ConnectionInfo {
+                    name: c.name.clone(),
+                    peer_host: c.peer_host.clone(),
+                    peer_port: c.peer_port,
+                    peer_address: format!("{}:{}", c.peer_host, c.peer_port),
+                    protocol: c.protocol.clone(),
+                    connected_at: c.connected_at,
+                    connected_seconds,
+                    channel_count: c.channels,
+                    state: c.state,
+                }
+            })
+            .collect();
+
+        // total 已在上方从分页响应中解析；纯数组响应用当前页条数占位。
+        Ok(Paginated {
+            items,
+            total,
+            page: pagination.page,
+            page_size: pagination.page_size,
+        })
+    }
+
+    /// 列出当前 vhost 的信道（支持分页 + 按连接名过滤）
+    pub async fn list_channels(
+        &self,
+        connection_name: Option<&str>,
+        pagination: &Pagination,
+    ) -> AppResult<Paginated<ChannelInfo>> {
+        // RabbitMQ /api/channels 返回所有 vhost 的信道；按 vhost 在客户端过滤
+        let path = format!(
+            "/api/channels?page={}&page_size={}",
+            pagination.page, pagination.page_size
+        );
+        let response: ChannelsResponse = self.get_json(&path).await?;
+        let (raw, total) = match response {
+            ChannelsResponse::Array(arr) => {
+                let total = arr.len() as u64;
+                (arr, total)
+            }
+            ChannelsResponse::Paginated(p) => (
+                p.items,
+                p.filtered_count.max(p.total_count),
+            ),
+        };
+        let raw: Vec<ManagementChannel> = raw
+            .into_iter()
+            .filter(|c| c.vhost == self.vhost)
+            .collect();
+        let total = total.max(raw.len() as u64);
+
+        let mut items: Vec<ChannelInfo> = raw
+            .into_iter()
+            .map(|c| {
+                let stats = c.message_stats.as_ref();
+                ChannelInfo {
+                    name: c.name.clone(),
+                    connection_name: c.connection_details.name.clone(),
+                    number: c.number,
+                    consumer_count: c.consumer_count,
+                    prefetch_count: c.prefetch_count,
+                    unacked: c.messages_unacknowledged,
+                    publish_rate: stats
+                        .and_then(|s| s.publish_details.as_ref())
+                        .map(|d| d.rate)
+                        .unwrap_or(0.0),
+                    deliver_rate: stats
+                        .and_then(|s| s.deliver_get_details.as_ref())
+                        .map(|d| d.rate)
+                        .unwrap_or(0.0),
+                    ack_rate: stats
+                        .and_then(|s| s.ack_details.as_ref())
+                        .map(|d| d.rate)
+                        .unwrap_or(0.0),
+                }
+            })
+            .collect();
+
+        if let Some(conn_name) = connection_name {
+            items.retain(|c| c.connection_name == conn_name);
+        }
+
+        Ok(Paginated {
+            items,
+            total,
+            page: pagination.page,
+            page_size: pagination.page_size,
+        })
+    }
+
+    /// 列出当前 vhost 的消费者，并补充连接时长与队列消费速率（带降级缓存）
     pub async fn list_consumers(&self) -> AppResult<Vec<ConsumerInfo>> {
+        match self._list_consumers_inner().await {
+            Ok(consumers) => {
+                *self.consumers_cache.write() = Some(consumers.clone());
+                self.is_stale.store(false, Ordering::SeqCst);
+                Ok(consumers)
+            }
+            Err(e) => {
+                if let Some(cached) = self.consumers_cache.read().clone() {
+                    log::warn!("Management API 失败，返回缓存的消费者数据: {}", e);
+                    self.is_stale.store(true, Ordering::SeqCst);
+                    Ok(cached)
+                } else {
+                    Err(e)
+                }
+            }
+        }
+    }
+
+    async fn _list_consumers_inner(&self) -> AppResult<Vec<ConsumerInfo>> {
         let path = format!("/api/consumers/{}", urlencoding(&self.vhost));
         let raw: Vec<ManagementConsumer> = self.get_json(&path).await?;
         let connections: Vec<ManagementConnection> = self.get_json("/api/connections").await?;
@@ -402,21 +689,21 @@ impl ManagementClient {
             .unwrap_or_default()
             .as_millis() as u64;
 
-        let mut queue_rates: HashMap<String, f64> = HashMap::new();
-        for c in &raw {
-            queue_rates.entry(c.queue.name.clone()).or_insert(0.0);
-        }
-        for queue_name in queue_rates.keys().cloned().collect::<Vec<_>>() {
-            if let Ok(queue) = self.get_queue(&queue_name).await {
-                let rate = queue
+        // 批量拉取队列速率，避免每个消费者触发一次 get_queue 的 N+1 查询
+        let queues_path = format!("/api/queues/{}", urlencoding(&self.vhost));
+        let queues: Vec<ManagementQueue> = self.get_json(&queues_path).await?;
+        let queue_rates: HashMap<String, f64> = queues
+            .into_iter()
+            .map(|q| {
+                let rate = q
                     .message_stats
                     .as_ref()
                     .and_then(|s| s.deliver_get_details.as_ref())
                     .map(|d| d.rate)
                     .unwrap_or(0.0);
-                queue_rates.insert(queue_name, rate);
-            }
-        }
+                (q.name, rate)
+            })
+            .collect();
 
         Ok(raw
             .into_iter()
@@ -516,18 +803,18 @@ fn decode_payload(payload: &str, encoding: &str) -> String {
 
 // === Management API 响应类型 ===
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct WhoAmI {
     pub name: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ManagementOverview {
     pub object_totals: ObjectTotals,
     pub queue_totals: Option<QueueTotals>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ObjectTotals {
     pub queues: u64,
     pub exchanges: u64,
@@ -535,14 +822,64 @@ pub struct ObjectTotals {
     pub consumers: u64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct QueueTotals {
     pub messages: u64,
     pub messages_ready: u64,
     pub messages_unacknowledged: u64,
 }
 
-#[derive(Debug, Deserialize)]
+/// RabbitMQ Management API 带分页参数时的队列列表响应。
+#[derive(Debug, Clone, Deserialize)]
+struct PaginatedQueuesResponse {
+    pub items: Vec<ManagementQueue>,
+    #[serde(default)]
+    pub total_count: u64,
+    #[serde(default)]
+    pub filtered_count: u64,
+}
+
+/// 兼容旧版/不带分页参数时返回的纯数组与新版分页对象两种格式。
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+enum QueuesResponse {
+    Array(Vec<ManagementQueue>),
+    Paginated(PaginatedQueuesResponse),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct PaginatedConnectionsResponse {
+    pub items: Vec<ManagementConnection>,
+    #[serde(default)]
+    pub total_count: u64,
+    #[serde(default)]
+    pub filtered_count: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+enum ConnectionsResponse {
+    Array(Vec<ManagementConnection>),
+    Paginated(PaginatedConnectionsResponse),
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct PaginatedChannelsResponse {
+    pub items: Vec<ManagementChannel>,
+    #[serde(default)]
+    pub total_count: u64,
+    #[serde(default)]
+    pub filtered_count: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+enum ChannelsResponse {
+    Array(Vec<ManagementChannel>),
+    Paginated(PaginatedChannelsResponse),
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct ManagementQueue {
     pub name: String,
     pub vhost: String,
@@ -573,31 +910,47 @@ pub struct ManagementQueue {
     pub incoming: Vec<ManagementPublisher>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ManagementPublisher {
     pub stats: Option<MessageStats>,
     pub channel_details: ChannelDetails,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct MessageStats {
     pub publish: Option<u64>,
     pub deliver_get: Option<u64>,
     pub ack: Option<u64>,
     pub publish_details: Option<RateDetails>,
     pub deliver_get_details: Option<RateDetails>,
+    #[serde(default)]
+    pub ack_details: Option<RateDetails>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct RateDetails {
     pub rate: f64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ManagementExchange {
     pub name: String,
     pub kind: String,
     pub durable: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ManagementBinding {
+    pub source: String,
+    pub vhost: String,
+    pub destination: String,
+    #[serde(rename = "destination_type")]
+    pub destination_type: String,
+    pub routing_key: String,
+    #[serde(default)]
+    pub arguments: serde_json::Value,
+    #[serde(rename = "properties_key")]
+    pub properties_key: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -608,7 +961,7 @@ struct GetMessageRequest {
     truncate: u32,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct GetMessageResponse {
     #[serde(default)]
     pub delivery_tag: i64,
@@ -633,7 +986,7 @@ struct GetMessageResponse {
 
 // === 集群节点 ===
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ManagementNode {
     pub name: String,
     #[serde(default)]
@@ -664,7 +1017,7 @@ pub struct ManagementNode {
     pub sockets_total: u64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ManagementConsumer {
     pub consumer_tag: String,
     pub channel_details: ChannelDetails,
@@ -675,7 +1028,7 @@ pub struct ManagementConsumer {
     pub prefetch_count: u32,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct ChannelDetails {
     pub name: String,
     #[serde(default)]
@@ -686,17 +1039,49 @@ pub struct ChannelDetails {
     pub connection_name: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct QueueRef {
     pub name: String,
     pub vhost: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ManagementConnection {
     pub name: String,
     #[serde(default)]
+    pub vhost: String,
+    #[serde(default)]
+    pub peer_host: String,
+    #[serde(default)]
+    pub peer_port: u16,
+    #[serde(default)]
+    pub protocol: String,
+    #[serde(default)]
     pub connected_at: u64,
+    #[serde(default)]
+    pub channels: u32,
+    #[serde(default)]
+    pub state: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ManagementChannel {
+    pub name: String,
+    #[serde(default)]
+    pub vhost: String,
+    /// RabbitMQ 3.13+ 在 channel 对象里使用 `connection_details`，而不是顶层 `connection_name`
+    #[serde(default)]
+    pub connection_details: ChannelDetails,
+    #[serde(default)]
+    pub number: u16,
+    #[serde(default)]
+    pub consumer_count: u32,
+    #[serde(default)]
+    pub prefetch_count: u16,
+    #[serde(default, rename = "messages_unacknowledged")]
+    pub messages_unacknowledged: u64,
+    #[serde(default)]
+    pub message_stats: Option<MessageStats>,
 }
 
 fn into_node_info(n: ManagementNode) -> NodeInfo {

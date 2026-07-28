@@ -1,8 +1,17 @@
 import { useEffect, useState } from "preact/hooks";
 import { StatusPill } from "../components/Badges.jsx";
 import { ConfirmDialog } from "../components/ConfirmDialog.jsx";
+import { SearchableSelect } from "../components/SearchableSelect.jsx";
 import { Term } from "../components/Term.jsx";
-import { extractErrorMessage, getMessageTrace, listMessageFeed, listQueues, publishMessage } from "../lib/api.js";
+import {
+  extractErrorMessage,
+  getMessageTrace,
+  getQueueDetail,
+  listMessageFeed,
+  listQueues,
+  peekQueueMessages,
+  publishMessage,
+} from "../lib/api.js";
 import { toastFail, toastInfo, toastOk } from "../lib/toast.js";
 
 const EMPTY_FORM = {
@@ -32,7 +41,10 @@ const FILTER_OPTIONS = [
 ];
 
 export function MessagesView() {
-  const [tab, setTab] = useState("send"); // send | feed
+  const [tab, setTab] = useState(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    return ["send", "feed", "inspect"].includes(t) ? t : "feed";
+  });
   const [form, setForm] = useState(EMPTY_FORM);
   const [queues, setQueues] = useState([]);
   const [feed, setFeed] = useState([]);
@@ -43,12 +55,23 @@ export function MessagesView() {
   const [detailItem, setDetailItem] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
+  // 队列消息探查
+  const [inspectQueue, setInspectQueue] = useState("");
+  const [inspectCount, setInspectCount] = useState(20);
+  const [inspectLoading, setInspectLoading] = useState(false);
+  const [inspectMessages, setInspectMessages] = useState([]);
+  const [inspectDetail, setInspectDetail] = useState(null);
+  const [inspectError, setInspectError] = useState("");
+
   async function loadQueues() {
     try {
       const list = await listQueues();
       setQueues(list);
       if (list.length > 0 && !form.targetQueue) {
         setForm((prev) => ({ ...prev, targetQueue: list[0].name }));
+      }
+      if (list.length > 0 && !inspectQueue) {
+        setInspectQueue(list[0].name);
       }
     } catch (e) {
       console.warn("加载队列列表失败", e);
@@ -169,6 +192,37 @@ export function MessagesView() {
     }
   }
 
+  async function handleInspect() {
+    if (!inspectQueue) {
+      toastFail("请先选择要探查的队列");
+      return;
+    }
+    setInspectLoading(true);
+    setInspectError("");
+    try {
+      const [messages, detail] = await Promise.all([
+        peekQueueMessages(inspectQueue, Math.max(1, Math.min(100, inspectCount))),
+        getQueueDetail(inspectQueue),
+      ]);
+      setInspectMessages(messages);
+      setInspectDetail(detail);
+    } catch (e) {
+      const msg = extractErrorMessage(e);
+      setInspectError(msg);
+      toastFail(`探查失败：${msg}`);
+    } finally {
+      setInspectLoading(false);
+    }
+  }
+
+  function formatHeaders(headers) {
+    try {
+      return JSON.stringify(headers, null, 2);
+    } catch {
+      return String(headers);
+    }
+  }
+
   return (
     <section class="view active" data-view="messages">
       <header class="page-head">
@@ -184,6 +238,9 @@ export function MessagesView() {
         </button>
         <button type="button" class={tab === "feed" ? "on" : ""} data-tab="feed" onClick={() => setTab("feed")}>
           消息通知列表
+        </button>
+        <button type="button" class={tab === "inspect" ? "on" : ""} data-tab="inspect" onClick={() => setTab("inspect")}>
+          队列消息探查
         </button>
       </div>
 
@@ -210,21 +267,13 @@ export function MessagesView() {
               <label>
                 目标 <Term termKey="queue" label="队列" />
               </label>
-              <select
-                class="input"
+              <SearchableSelect
                 value={form.targetQueue}
-                onChange={(e) => updateField("targetQueue", e.target.value)}
-              >
-                {queues.length === 0 ? (
-                  <option value="">（无可用队列）</option>
-                ) : (
-                  queues.map((q) => (
-                    <option key={q.name} value={q.name}>
-                      {q.name}
-                    </option>
-                  ))
-                )}
-              </select>
+                options={queues.map((q) => q.name)}
+                onChange={(value) => updateField("targetQueue", value)}
+                placeholder={queues.length === 0 ? "（无可用队列）" : "输入队列名或从下拉选择…"}
+                disabled={queues.length === 0}
+              />
             </div>
           ) : (
             <>
@@ -326,7 +375,7 @@ export function MessagesView() {
             </button>
           </div>
         </div>
-      ) : (
+      ) : tab === "feed" ? (
         <div class="card">
           <div class="col-title">
             <h3>消息通知列表（消息命运追踪）</h3>
@@ -336,17 +385,21 @@ export function MessagesView() {
           </div>
 
           <div class="seg" id="feedFilters" style="margin-bottom:12px;">
-            {FILTER_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                class={`chip ${feedFilter === opt.value ? "on" : ""}`}
-                data-f={opt.value}
-                onClick={() => setFeedFilter(opt.value)}
-              >
-                {opt.label}
-              </button>
-            ))}
+            {FILTER_OPTIONS.map((opt) => {
+              const count = feed.filter((item) => opt.value === "all" || item.status === opt.value).length;
+              return (
+                <button
+                  key={opt.value}
+                  type="button"
+                  class={`chip ${feedFilter === opt.value ? "on" : ""}`}
+                  data-f={opt.value}
+                  onClick={() => setFeedFilter(opt.value)}
+                  title={`${opt.label}：${count} 条`}
+                >
+                  {opt.label} ({count})
+                </button>
+              );
+            })}
           </div>
 
           {error ? (
@@ -383,6 +436,139 @@ export function MessagesView() {
               </tbody>
             </table>
           )}
+        </div>
+      ) : (
+        <div class="card">
+          <div class="col-title">
+            <h3>队列消息探查（不消费）</h3>
+            <span class="muted">查看队列里当前真实消息及在线消费者</span>
+          </div>
+
+          {inspectError ? (
+            <div role="alert" class="banner danger" style="margin-bottom:12px;">
+              <div class="grow">
+                <p>{inspectError}</p>
+              </div>
+            </div>
+          ) : null}
+
+          <div class="flex" style="gap:12px; align-items:flex-end; flex-wrap:wrap;">
+            <div class="field" style="min-width:220px; flex:1;">
+              <label>目标队列</label>
+              <SearchableSelect
+                value={inspectQueue}
+                options={queues.map((q) => q.name)}
+                onChange={(value) => setInspectQueue(value)}
+                placeholder="请选择队列"
+              />
+            </div>
+            <div class="field" style="width:120px;">
+              <label>数量</label>
+              <input
+                type="number"
+                class="input"
+                min="1"
+                max="100"
+                value={inspectCount}
+                onInput={(e) => setInspectCount(Number(e.target.value))}
+              />
+            </div>
+            <button
+              type="button"
+              class="btn primary"
+              onClick={handleInspect}
+              disabled={inspectLoading || !inspectQueue}
+            >
+              {inspectLoading ? "探查中…" : "探查"}
+            </button>
+          </div>
+
+          {inspectDetail ? (
+            <div class="stat-grid" style="grid-template-columns: repeat(4, 1fr); margin-top:16px;">
+              <div class="stat">
+                <div class="label">待消费</div>
+                <div class="num">{inspectDetail.summary.ready.toLocaleString()}</div>
+              </div>
+              <div class="stat">
+                <div class="label">处理中</div>
+                <div class="num">{inspectDetail.summary.unacked.toLocaleString()}</div>
+              </div>
+              <div class="stat">
+                <div class="label">消费者</div>
+                <div class="num">{inspectDetail.summary.consumers.toLocaleString()}</div>
+              </div>
+              <div class="stat">
+                <div class="label">总数</div>
+                <div class="num">{inspectDetail.summary.total.toLocaleString()}</div>
+              </div>
+            </div>
+          ) : null}
+
+          {inspectDetail?.consumers?.length > 0 ? (
+            <div style="margin-top:16px;">
+              <h4>在线消费者</h4>
+              <table class="tbl">
+                <thead>
+                  <tr>
+                    <th>标签</th>
+                    <th>连接</th>
+                    <th>地址</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {inspectDetail.consumers.map((c) => (
+                    <tr key={c.name}>
+                      <td class="mono">{c.name}</td>
+                      <td class="mono">{c.connection_name}</td>
+                      <td class="mono">{c.peer_address}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : inspectDetail ? (
+            <p class="muted" style="margin-top:12px;">暂无在线消费者。</p>
+          ) : null}
+
+          {inspectMessages.length > 0 ? (
+            <div style="margin-top:16px;">
+              <h4>消息列表（前 {inspectMessages.length} 条）</h4>
+              <table class="tbl">
+                <thead>
+                  <tr>
+                    <th>#</th>
+                    <th>Payload 预览</th>
+                    <th>大小</th>
+                    <th>Exchange / RoutingKey</th>
+                    <th>Headers</th>
+                    <th>是否重发</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {inspectMessages.map((m, i) => (
+                    <tr key={m.delivery_tag}>
+                      <td>{i + 1}</td>
+                      <td class="mono" style="max-width:240px; overflow:hidden; text-overflow:ellipsis;">
+                        <pre style="margin:0;">{formatPayload(m.payload)}</pre>
+                      </td>
+                      <td>{m.payload_size} B</td>
+                      <td class="mono">
+                        {m.exchange}
+                        <br />
+                        {m.routing_key}
+                      </td>
+                      <td>
+                        <pre style="margin:0; max-width:160px; overflow:auto;">{formatHeaders(m.headers)}</pre>
+                      </td>
+                      <td>{m.redelivered ? "是" : "否"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : inspectDetail && !inspectLoading ? (
+            <p class="muted" style="margin-top:12px;">该队列当前没有可探查的消息。</p>
+          ) : null}
         </div>
       )}
 

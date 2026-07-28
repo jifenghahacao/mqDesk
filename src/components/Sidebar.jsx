@@ -4,6 +4,7 @@ const NAV_ITEMS = [
   { key: "connections", label: "连接", icon: "🔗" },
   { key: "overview", label: "总览", icon: "📊" },
   { key: "queues", label: "队列", icon: "📋" },
+  { key: "rabbit-connections", label: "连接监控", icon: "🔌" },
   { key: "nodes", label: "集群节点", icon: "🖥️" },
   { key: "consumers", label: "消费者", icon: "👥" },
   { key: "consumer-studio", label: "消费者工作室", icon: "🧪" },

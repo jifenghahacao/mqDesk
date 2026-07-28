@@ -3,8 +3,8 @@
 use crate::commands::audit;
 use mqdesk_core::error::{AppError, AppResult};
 use mqdesk_core::models::{
-    CreateQueueInput, PreviewMessage, QueueDetail, QueueFilter, QueueMessage, QueuePolicyInput,
-    QueueSummary, RateHistory,
+    CreateQueueInput, Paginated, Pagination, PreviewMessage, QueueDetail, QueueFilter, QueueMessage,
+    QueuePolicyInput, QueueSummary, RateHistory,
 };
 use mqdesk_core::state::AppState;
 use std::sync::Arc;
@@ -23,8 +23,8 @@ pub async fn list_queues(
         return Err(AppError::NotConnected);
     }
     let management = state.rabbit_management();
-    let queues = management.list_queues(&filter).await?;
-    let mut summaries: Vec<_> = queues.iter().map(|q| q.to_summary()).collect();
+    let paginated = management.list_queues(&filter, &Pagination::default()).await?;
+    let mut summaries: Vec<_> = paginated.items.iter().map(|q| q.to_summary()).collect();
 
     if !filter.health.is_empty() && filter.health != "all" {
         summaries.retain(|q| q.health.css_class() == filter.health);
@@ -32,6 +32,26 @@ pub async fn list_queues(
 
     summaries.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(summaries)
+}
+
+#[tauri::command]
+pub async fn list_queues_paginated(
+    filter: QueueFilter,
+    pagination: Pagination,
+    state: State<'_, Arc<AppState>>,
+) -> AppResult<Paginated<QueueSummary>> {
+    if state.get_active().is_none() {
+        return Err(AppError::NotConnected);
+    }
+    let management = state.rabbit_management();
+    let paginated = management.list_queues(&filter, &pagination).await?;
+    let items: Vec<_> = paginated.items.iter().map(|q| q.to_summary()).collect();
+    Ok(Paginated {
+        items,
+        total: paginated.total,
+        page: paginated.page,
+        page_size: paginated.page_size,
+    })
 }
 
 #[tauri::command]
@@ -177,6 +197,22 @@ pub async fn resume_queue(
     management.resume_queue(&name).await?;
     let queue = management.get_queue(&name).await?;
     let _ = audit::record(&**state, "resume_queue", &name, &vhost, "队列已恢复");
+    Ok(queue.to_summary())
+}
+
+#[tauri::command]
+pub async fn purge_queue(
+    name: String,
+    state: State<'_, Arc<AppState>>,
+) -> AppResult<QueueSummary> {
+    if state.get_active().is_none() {
+        return Err(AppError::NotConnected);
+    }
+    let vhost = active_vhost(&state);
+    let management = state.rabbit_management();
+    management.purge_queue(&name).await?;
+    let queue = management.get_queue(&name).await?;
+    let _ = audit::record(&**state, "purge_queue", &name, &vhost, "队列已清空");
     Ok(queue.to_summary())
 }
 

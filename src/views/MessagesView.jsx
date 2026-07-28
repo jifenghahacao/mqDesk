@@ -8,7 +8,7 @@ import {
   getMessageTrace,
   getQueueDetail,
   listMessageFeed,
-  listQueues,
+  listQueuesPaginated,
   peekQueueMessages,
   publishMessage,
 } from "../lib/api.js";
@@ -100,7 +100,9 @@ export function MessagesView() {
 
   async function loadQueueMessagesAsFeed(statusFilter = null) {
     try {
-      const queuesList = await listQueues();
+      // 用分页接口拉取全部队列（默认 listQueues 只返回 50 条）
+      const result = await listQueuesPaginated({}, { page: 1, page_size: 5000 });
+      const queuesList = result.items || [];
       const withMessages = queuesList
         .filter((q) => (q.total || 0) > 0)
         .sort((a, b) => (b.total || 0) - (a.total || 0))

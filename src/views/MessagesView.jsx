@@ -169,22 +169,24 @@ export function MessagesView() {
           console.warn(`探查队列 ${q.name} 消息失败`, peekErr);
         }
 
-        // peek 失败或返回空时，至少展示队列消息汇总，确保用户能看到这 7300 条的存在
-        if (peekedCount === 0) {
-          feedItems.push({
-            trace_id: `queue-summary-${q.name}-${Date.now()}`,
-            time: new Date().toISOString(),
-            direction: "received",
-            queue_name: q.name,
-            exchange: null,
-            routing_key: "",
-            status,
-            summary: `队列消息汇总：共 ${q.total} 条（待消费 ${q.ready || 0} / 处理中 ${q.unacked || 0}）`,
-            payload_preview: `该队列包含 ${q.total} 条消息。可在「队列消息探查」中选择该队列查看详情。`,
-            payload_size: q.total,
-            content_type: "text/plain",
-          });
-        }
+        // 每个有消息的队列都展示汇总行，让用户知道完整消息数
+        feedItems.push({
+          trace_id: `queue-summary-${q.name}-${Date.now()}`,
+          time: new Date().toISOString(),
+          direction: "received",
+          queue_name: q.name,
+          exchange: null,
+          routing_key: "",
+          status,
+          summary: `队列消息汇总：共 ${q.total} 条，已展示前 ${peekedCount} 条`,
+          payload_preview: `该队列包含 ${q.total} 条消息（待消费 ${q.ready || 0} / 处理中 ${q.unacked || 0}）。点击此行可在「队列消息探查」中查看完整内容。`,
+          payload_size: q.total,
+          content_type: "text/plain",
+          is_queue_summary: true,
+          queue_total: q.total,
+          queue_ready: q.ready || 0,
+          queue_unacked: q.unacked || 0,
+        });
       }
       return feedItems;
     } catch (e) {
@@ -271,20 +273,41 @@ export function MessagesView() {
     return item.status === feedFilter;
   });
 
-  async function openDetail(traceId) {
-    // 兜底加载的队列消息（trace_id 以 peek- 开头）直接本地展示
+  // 统计真实消息总数（队列汇总行的 queue_total 之和 + 非汇总行条数）
+  const totalMessageCount = feed.reduce((sum, item) => {
+    if (item.is_queue_summary) return sum + (item.queue_total || 0);
+    return sum + 1;
+  }, 0);
+
+  function openDetail(traceId) {
     const localItem = feed.find((item) => item.trace_id === traceId);
+
+    // 汇总行点击：跳转到「队列消息探查」并选中该队列
+    if (localItem && localItem.is_queue_summary) {
+      setInspectQueue(localItem.queue_name);
+      setInspectCount(Math.min(localItem.queue_total || 20, 100));
+      setTab("inspect");
+      toastInfo(`已切换到队列消息探查：${localItem.queue_name}`);
+      return;
+    }
+
+    // 兜底加载的队列消息（trace_id 以 peek- 开头）直接本地展示
     if (localItem && String(traceId).startsWith("peek-")) {
       setDetailItem(localItem);
       return;
     }
+
     setDetailLoading(true);
     try {
-      const item = await getMessageTrace(traceId);
-      setDetailItem(item);
+      getMessageTrace(traceId).then((item) => {
+        setDetailItem(item);
+      }).catch((e) => {
+        toastFail(`加载详情失败：${extractErrorMessage(e)}`);
+      }).finally(() => {
+        setDetailLoading(false);
+      });
     } catch (e) {
       toastFail(`加载详情失败：${extractErrorMessage(e)}`);
-    } finally {
       setDetailLoading(false);
     }
   }
@@ -498,7 +521,14 @@ export function MessagesView() {
 
           <div class="seg" id="feedFilters" style="margin-bottom:12px;">
             {FILTER_OPTIONS.map((opt) => {
-              const count = feed.filter((item) => opt.value === "all" || item.status === opt.value).length;
+              const count = opt.value === "all"
+                ? totalMessageCount
+                : feed
+                    .filter((item) => item.status === opt.value)
+                    .reduce((sum, item) => {
+                      if (item.is_queue_summary) return sum + (item.queue_total || 0);
+                      return sum + 1;
+                    }, 0);
               return (
                 <button
                   key={opt.value}
@@ -508,7 +538,7 @@ export function MessagesView() {
                   onClick={() => setFeedFilter(opt.value)}
                   title={`${opt.label}：${count} 条`}
                 >
-                  {opt.label} ({count})
+                  {opt.label} ({count.toLocaleString()})
                 </button>
               );
             })}
@@ -540,14 +570,25 @@ export function MessagesView() {
               </thead>
               <tbody>
                 {filteredFeed.map((item) => (
-                  <tr key={item.trace_id} class="queue-row" onClick={() => openDetail(item.trace_id)}>
-                    <td class="mono">{item.time}</td>
-                    <td>{item.direction === "sent" ? "发送" : "接收"}</td>
+                  <tr
+                    key={item.trace_id}
+                    class={`queue-row${item.is_queue_summary ? " queue-summary-row" : ""}`}
+                    onClick={() => openDetail(item.trace_id)}
+                    style={item.is_queue_summary ? { cursor: "pointer", background: "rgba(47,127,242,0.04)" } : null}
+                  >
+                    <td class="mono">{item.is_queue_summary ? "—" : item.time}</td>
+                    <td>{item.is_queue_summary ? "汇总" : (item.direction === "sent" ? "发送" : "接收")}</td>
                     <td class="mono">{item.queue_name}</td>
                     <td>
                       <StatusPill status={item.status} />
                     </td>
-                    <td class="muted">{item.summary}</td>
+                    <td class="muted">
+                      {item.is_queue_summary ? (
+                        <strong style="color: var(--primary)">{item.summary}</strong>
+                      ) : (
+                        item.summary
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

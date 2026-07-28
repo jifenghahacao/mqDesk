@@ -64,11 +64,26 @@ export function MessagesView() {
   const [inspectDetail, setInspectDetail] = useState(null);
   const [inspectError, setInspectError] = useState("");
 
+  async function fetchAllQueues() {
+    const PAGE_SIZE = 500;
+    const all = [];
+    let page = 1;
+    while (true) {
+      const result = await listQueuesPaginated({}, { page, page_size: PAGE_SIZE });
+      const items = result.items || [];
+      all.push(...items);
+      if (items.length < PAGE_SIZE) break;
+      if (result.total != null && all.length >= result.total) break;
+      page += 1;
+      // 安全上限，防止异常死循环
+      if (page > 100) break;
+    }
+    return all;
+  }
+
   async function loadQueues() {
     try {
-      // 默认 listQueues 只返回 50 条，这里拉取全部
-      const result = await listQueuesPaginated({}, { page: 1, page_size: 5000 });
-      const list = result.items || [];
+      const list = await fetchAllQueues();
       setQueues(list);
       if (list.length > 0 && !form.targetQueue) {
         setForm((prev) => ({ ...prev, targetQueue: list[0].name }));
@@ -117,8 +132,7 @@ export function MessagesView() {
     const feedItems = [];
     try {
       // 用分页接口拉取全部队列（默认 listQueues 只返回 50 条）
-      const result = await listQueuesPaginated({}, { page: 1, page_size: 5000 });
-      const queuesList = result.items || [];
+      const queuesList = await fetchAllQueues();
       const withMessages = queuesList
         .filter((q) => (q.total || 0) > 0)
         .sort((a, b) => (b.total || 0) - (a.total || 0))

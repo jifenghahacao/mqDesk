@@ -82,9 +82,55 @@ export function MessagesView() {
     try {
       const filter = feedFilter === "all" ? null : { status: feedFilter };
       const list = await listMessageFeed(filter);
-      setFeed(list);
+      // 本地追踪记录为空时，从队列中加载真实消息作为兜底展示
+      if (feedFilter === "all" && list.length === 0) {
+        const fallback = await loadQueueMessagesFallback();
+        setFeed(fallback);
+      } else {
+        setFeed(list);
+      }
     } catch (e) {
       setError(extractErrorMessage(e));
+    }
+  }
+
+  async function loadQueueMessagesFallback() {
+    try {
+      const queuesList = await listQueues();
+      const withMessages = queuesList
+        .filter((q) => (q.total || 0) > 0)
+        .sort((a, b) => (b.total || 0) - (a.total || 0))
+        .slice(0, 20);
+
+      const feedItems = [];
+      for (const q of withMessages) {
+        const messages = await peekQueueMessages(q.name, 5);
+        messages.forEach((msg, idx) => {
+          const payloadPreview =
+            typeof msg.payload === "string" && msg.payload.length > 80
+              ? `${msg.payload.slice(0, 80)}…`
+              : String(msg.payload ?? "");
+          const summary = payloadPreview || `消息 · ${msg.routing_key || q.name}`;
+          const status = q.consumers === 0 ? "backlog" : "consumed";
+          feedItems.push({
+            trace_id: `peek-${q.name}-${idx}-${Date.now()}`,
+            time: new Date().toISOString(),
+            direction: "received",
+            queue_name: q.name,
+            exchange: msg.exchange || null,
+            routing_key: msg.routing_key || "",
+            status,
+            summary,
+            payload_preview: payloadPreview,
+            payload_size: msg.payload_size || 0,
+            content_type: "application/octet-stream",
+          });
+        });
+      }
+      return feedItems;
+    } catch (e) {
+      console.warn("从队列加载消息兜底失败", e);
+      return [];
     }
   }
 
@@ -166,6 +212,12 @@ export function MessagesView() {
   });
 
   async function openDetail(traceId) {
+    // 兜底加载的队列消息（trace_id 以 peek- 开头）直接本地展示
+    const localItem = feed.find((item) => item.trace_id === traceId);
+    if (localItem && String(traceId).startsWith("peek-")) {
+      setDetailItem(localItem);
+      return;
+    }
     setDetailLoading(true);
     try {
       const item = await getMessageTrace(traceId);

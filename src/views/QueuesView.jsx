@@ -28,14 +28,19 @@ export function QueuesView({ onOpenQueue }) {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [queueType, setQueueType] = useState("all");
   const [health, setHealth] = useState("all");
   const [formOpen, setFormOpen] = useState(false);
 
-  async function reload(nextPage = page, nextPageSize = pageSize) {
-    setLoading(true);
+  async function reload(nextPage = page, nextPageSize = pageSize, silent = false) {
+    if (silent) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     setError("");
     try {
       const filter = {
@@ -51,7 +56,11 @@ export function QueuesView({ onOpenQueue }) {
     } catch (e) {
       setError(extractErrorMessage(e));
     } finally {
-      setLoading(false);
+      if (silent) {
+        setRefreshing(false);
+      } else {
+        setLoading(false);
+      }
     }
   }
 
@@ -62,7 +71,7 @@ export function QueuesView({ onOpenQueue }) {
   useEffect(() => {
     let unlisten;
     listenQueueRefreshed(() => {
-      reload(page, pageSize);
+      reload(page, pageSize, true);
     }).then((fn) => {
       unlisten = fn;
     });
@@ -77,12 +86,13 @@ export function QueuesView({ onOpenQueue }) {
   }, [queues, health]);
 
   const totals = useMemo(() => {
+    // 总队列数使用服务端分页总数；健康分类按当前页数据做近似展示
     const ok = filteredQueues.filter((q) => q.health === "ok").length;
     const warn = filteredQueues.filter((q) => q.health === "warn").length;
     const danger = filteredQueues.filter((q) => q.health === "danger").length;
     const idle = filteredQueues.filter((q) => q.health === "idle").length;
-    return { total: filteredQueues.length, ok, warn, danger, idle };
-  }, [filteredQueues]);
+    return { total, ok, warn, danger, idle };
+  }, [filteredQueues, total]);
 
   return (
     <section class="view active" data-view="queues">
@@ -161,7 +171,15 @@ export function QueuesView({ onOpenQueue }) {
         </div>
       ) : null}
 
-      <div class="card" style="margin-top:16px;">
+      <div class="card" style="margin-top:16px; position:relative;">
+        {refreshing ? (
+          <div
+            style="position:absolute; top:12px; right:12px; z-index:1; display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted);"
+          >
+            <span class="spin" style="width:14px; height:14px; border-width:2px;" />
+            刷新中
+          </div>
+        ) : null}
         {loading ? (
           <div class="empty">加载中…</div>
         ) : filteredQueues.length === 0 ? (

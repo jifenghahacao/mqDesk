@@ -49,6 +49,7 @@ export function MessagesView() {
   const [queues, setQueues] = useState([]);
   const [feed, setFeed] = useState([]);
   const [feedFilter, setFeedFilter] = useState("all");
+  const [feedLoading, setFeedLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [error, setError] = useState("");
@@ -65,7 +66,9 @@ export function MessagesView() {
 
   async function loadQueues() {
     try {
-      const list = await listQueues();
+      // 默认 listQueues 只返回 50 条，这里拉取全部
+      const result = await listQueuesPaginated({}, { page: 1, page_size: 5000 });
+      const list = result.items || [];
       setQueues(list);
       if (list.length > 0 && !form.targetQueue) {
         setForm((prev) => ({ ...prev, targetQueue: list[0].name }));
@@ -74,11 +77,15 @@ export function MessagesView() {
         setInspectQueue(list[0].name);
       }
     } catch (e) {
+      const msg = extractErrorMessage(e);
       console.warn("加载队列列表失败", e);
+      toastFail(`加载队列列表失败：${msg}`);
     }
   }
 
   async function loadFeed() {
+    setFeedLoading(true);
+    setError("");
     try {
       // 本地追踪记录（通过 MQDesk 发送的消息）
       const filter = feedFilter === "all" ? null : { status: feedFilter };
@@ -95,10 +102,19 @@ export function MessagesView() {
       setFeed(merged);
     } catch (e) {
       setError(extractErrorMessage(e));
+    } finally {
+      setFeedLoading(false);
     }
   }
 
+  function inferQueueMessageStatus(q) {
+    if ((q.ready || 0) > 0) return "backlog";
+    if ((q.unacked || 0) > 0 || (q.consumers || 0) > 0) return "consumed";
+    return "backlog";
+  }
+
   async function loadQueueMessagesAsFeed(statusFilter = null) {
+    const feedItems = [];
     try {
       // 用分页接口拉取全部队列（默认 listQueues 只返回 50 条）
       const result = await listQueuesPaginated({}, { page: 1, page_size: 5000 });
@@ -108,44 +124,59 @@ export function MessagesView() {
         .sort((a, b) => (b.total || 0) - (a.total || 0))
         .slice(0, 20);
 
-      const feedItems = [];
       for (const q of withMessages) {
-        const messages = await peekQueueMessages(q.name, 5);
-        messages.forEach((msg, idx) => {
-          const payloadPreview =
-            typeof msg.payload === "string" && msg.payload.length > 80
-              ? `${msg.payload.slice(0, 80)}…`
-              : String(msg.payload ?? "");
-          const summary = payloadPreview || `消息 · ${msg.routing_key || q.name}`;
-          // 根据队列状态推断单条消息状态
-          let status = "backlog";
-          if ((q.ready || 0) > 0) {
-            status = "backlog";
-          } else if ((q.unacked || 0) > 0 || (q.consumers || 0) > 0) {
-            status = "consumed";
-          }
-          if (statusFilter && status !== statusFilter) {
-            return;
-          }
+        const status = inferQueueMessageStatus(q);
+        if (statusFilter && status !== statusFilter) continue;
+
+        let peekedCount = 0;
+        try {
+          const messages = await peekQueueMessages(q.name, 5);
+          peekedCount = messages.length;
+          messages.forEach((msg, idx) => {
+            const payloadPreview =
+              typeof msg.payload === "string" && msg.payload.length > 80
+                ? `${msg.payload.slice(0, 80)}…`
+                : String(msg.payload ?? "");
+            feedItems.push({
+              trace_id: `peek-${q.name}-${idx}-${Date.now()}`,
+              time: new Date().toISOString(),
+              direction: "received",
+              queue_name: q.name,
+              exchange: msg.exchange || null,
+              routing_key: msg.routing_key || "",
+              status,
+              summary: payloadPreview || `消息 · ${msg.routing_key || q.name}`,
+              payload_preview: payloadPreview,
+              payload_size: msg.payload_size || 0,
+              content_type: "application/octet-stream",
+            });
+          });
+        } catch (peekErr) {
+          console.warn(`探查队列 ${q.name} 消息失败`, peekErr);
+        }
+
+        // peek 失败或返回空时，至少展示队列消息汇总，确保用户能看到这 7300 条的存在
+        if (peekedCount === 0) {
           feedItems.push({
-            trace_id: `peek-${q.name}-${idx}-${Date.now()}`,
+            trace_id: `queue-summary-${q.name}-${Date.now()}`,
             time: new Date().toISOString(),
             direction: "received",
             queue_name: q.name,
-            exchange: msg.exchange || null,
-            routing_key: msg.routing_key || "",
+            exchange: null,
+            routing_key: "",
             status,
-            summary,
-            payload_preview: payloadPreview,
-            payload_size: msg.payload_size || 0,
-            content_type: "application/octet-stream",
+            summary: `队列消息汇总：共 ${q.total} 条（待消费 ${q.ready || 0} / 处理中 ${q.unacked || 0}）`,
+            payload_preview: `该队列包含 ${q.total} 条消息。可在「队列消息探查」中选择该队列查看详情。`,
+            payload_size: q.total,
+            content_type: "text/plain",
           });
-        });
+        }
       }
       return feedItems;
     } catch (e) {
       console.warn("从队列加载消息失败", e);
-      return [];
+      toastFail(`加载队列消息失败：${extractErrorMessage(e)}`);
+      return feedItems;
     }
   }
 
@@ -469,7 +500,12 @@ export function MessagesView() {
             })}
           </div>
 
-          {error ? (
+          {feedLoading ? (
+            <div class="empty">
+              <span class="spin" style="width:16px; height:16px; border-width:2px; margin-right:8px;" />
+              正在加载队列消息…
+            </div>
+          ) : error ? (
             <div role="alert" class="banner danger">
               <div class="grow">
                 <p>{error}</p>

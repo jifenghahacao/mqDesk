@@ -2,6 +2,7 @@
 // 所有调用都通过 @tauri-apps/api/core 的 invoke 函数
 
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 // === 连接管理 ===
 
@@ -103,6 +104,32 @@ export async function pauseQueue(name) {
 
 export async function resumeQueue(name) {
   return invoke("resume_queue", { name });
+}
+
+export async function purgeQueue(name) {
+  return invoke("purge_queue", { name });
+}
+
+export async function listQueueBindings(queueName) {
+  return invoke("list_queue_bindings", { queueName });
+}
+
+export async function deleteQueueBinding(queueName, binding) {
+  return invoke("delete_queue_binding", { queueName, binding });
+}
+
+export async function listQueuesPaginated(filter = {}, pagination = {}) {
+  return invoke("list_queues_paginated", { filter, pagination });
+}
+
+// === RabbitMQ 连接与信道 ===
+
+export async function listRabbitConnections(pagination = {}) {
+  return invoke("list_rabbit_connections", { pagination });
+}
+
+export async function listChannels(connectionName = null, pagination = {}) {
+  return invoke("list_channels", { connectionName, pagination });
 }
 
 // === 消息 ===
@@ -228,6 +255,24 @@ export async function startDragging() {
   } catch (e) {
     console.warn("startDragging failed:", e);
   }
+}
+
+// === 自动刷新事件 ===
+
+export async function listenQueueRefreshed(callback) {
+  return listen("queue-refreshed", (event) => callback(event.payload));
+}
+
+export async function listenManagementStale(callback) {
+  return listen("management-stale", (event) => callback(event.payload));
+}
+
+export async function setRefreshEnabled(enabled) {
+  return invoke("set_refresh_enabled", { enabled });
+}
+
+export async function setRefreshInterval(ms) {
+  return invoke("set_refresh_interval", { ms });
 }
 
 // === 错误处理 ===

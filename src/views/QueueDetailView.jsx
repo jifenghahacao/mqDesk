@@ -1,5 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
 import { HealthBadge } from "../components/Badges.jsx";
+import { BindingRow } from "../components/BindingRow.jsx";
 import { ConfirmDialog } from "../components/ConfirmDialog.jsx";
 import { QueueFormModal } from "../components/QueueFormModal.jsx";
 import { RateChart } from "../components/RateChart.jsx";
@@ -8,14 +9,17 @@ import {
   checkQueueAlerts,
   deleteQueue,
   deleteQueueAlertRule,
+  deleteQueueBinding,
   exportQueueAuditLogs,
   extractErrorMessage,
   getQueueDetail,
   listQueueAlertRecords,
   listQueueAlertRules,
   listQueueAuditLogs,
+  listQueueBindings,
   pauseQueue,
   peekQueueMessages,
+  purgeQueue,
   resumeQueue,
   setQueueAlertRule,
 } from "../lib/api.js";
@@ -24,6 +28,7 @@ import { toastFail, toastOk } from "../lib/toast.js";
 const TABS = [
   { key: "overview", label: "概览" },
   { key: "messages", label: "消息" },
+  { key: "bindings", label: "绑定" },
   { key: "alerts", label: "告警" },
   { key: "audit", label: "审计" },
 ];
@@ -62,11 +67,20 @@ export function QueueDetailView({ queueName, onBack }) {
   const [selectedMessage, setSelectedMessage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [tab, setTab] = useState("overview");
+  const [tab, setTab] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const t = params.get("tab");
+    return TABS.some((x) => x.key === t) ? t : "overview";
+  });
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [purgeOpen, setPurgeOpen] = useState(false);
   const [operating, setOperating] = useState(false);
+
+  // 绑定
+  const [bindings, setBindings] = useState([]);
+  const [loadingBindings, setLoadingBindings] = useState(false);
 
   // 告警
   const [rules, setRules] = useState([]);
@@ -114,9 +128,50 @@ export function QueueDetailView({ queueName, onBack }) {
 
   useEffect(() => {
     if (tab === "messages") reloadMessages();
+    if (tab === "bindings") reloadBindings();
     if (tab === "alerts") reloadAlerts();
     if (tab === "audit") reloadAudit();
   }, [tab]);
+
+  async function reloadBindings() {
+    if (!queueName) return;
+    setLoadingBindings(true);
+    try {
+      const list = await listQueueBindings(queueName);
+      setBindings(list);
+    } catch (e) {
+      toastFail(`加载绑定失败：${extractErrorMessage(e)}`);
+    } finally {
+      setLoadingBindings(false);
+    }
+  }
+
+  async function handleDeleteBinding(binding) {
+    if (!confirm(`确认解绑来源为「${binding.source || "-"}」、路由键为「${binding.routing_key || "-"}」的绑定？`)) {
+      return;
+    }
+    try {
+      await deleteQueueBinding(queueName, binding);
+      toastOk("绑定已删除");
+      reloadBindings();
+    } catch (e) {
+      toastFail(`解绑失败：${extractErrorMessage(e)}`);
+    }
+  }
+
+  async function handlePurge() {
+    setOperating(true);
+    try {
+      await purgeQueue(queueName);
+      toastOk("队列已清空");
+      setPurgeOpen(false);
+      reloadDetail();
+    } catch (e) {
+      toastFail(`清空失败：${extractErrorMessage(e)}`);
+    } finally {
+      setOperating(false);
+    }
+  }
 
   async function reloadAlerts() {
     if (!detail) return;
@@ -300,6 +355,9 @@ export function QueueDetailView({ queueName, onBack }) {
           <button type="button" class="btn secondary" onClick={() => setFormOpen(true)}>
             编辑
           </button>
+          <button type="button" class="btn warning" onClick={() => setPurgeOpen(true)} disabled={operating}>
+            清空队列
+          </button>
           {summary.queue_type === "classic" ? (
             <button type="button" class="btn secondary" onClick={handlePause} disabled={operating}>
               暂停
@@ -449,6 +507,40 @@ export function QueueDetailView({ queueName, onBack }) {
                         </button>
                       </td>
                     </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {tab === "bindings" ? (
+        <div class="card">
+          <div class="col-title">
+            <h3>绑定规则</h3>
+            <button type="button" class="link" onClick={reloadBindings}>
+              刷新
+            </button>
+          </div>
+          {loadingBindings ? (
+            <div class="empty">加载中…</div>
+          ) : bindings.length === 0 ? (
+            <div class="empty">暂无绑定规则。</div>
+          ) : (
+            <div class="table-wrap">
+              <table class="tbl binding-table">
+                <thead>
+                  <tr>
+                    <th>来源 Exchange</th>
+                    <th>路由键</th>
+                    <th>目标类型</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bindings.map((b) => (
+                    <BindingRow key={`${b.source}-${b.routing_key}`} binding={b} onDelete={handleDeleteBinding} />
                   ))}
                 </tbody>
               </table>
@@ -668,6 +760,16 @@ export function QueueDetailView({ queueName, onBack }) {
         okText="确认删除"
         onOk={handleDelete}
         onCancel={() => setDeleteOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={purgeOpen}
+        title="确认清空队列"
+        desc={`即将清空队列 <b>${summary.name}</b> 中的所有消息（当前共 ${summary.total} 条）。此操作不可恢复。`}
+        danger
+        okText="确认清空"
+        onOk={handlePurge}
+        onCancel={() => setPurgeOpen(false)}
       />
     </section>
   );

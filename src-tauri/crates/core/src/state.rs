@@ -2,7 +2,7 @@
 
 use crate::error::{AppError, AppResult};
 use crate::models::Connection;
-use crate::rabbit::{ConsumerManager, ManagementClient};
+use crate::rabbit::{ConsumerManager, ManagementClient, RefreshTask};
 use crate::storage::Storage;
 use parking_lot::RwLock;
 use std::path::PathBuf;
@@ -14,6 +14,8 @@ pub struct AppState {
     pub active_connection: RwLock<Option<ActiveConnection>>,
     /// 手动消费者管理器（消费者工作室）
     pub consumer_manager: ConsumerManager,
+    /// 后台自动刷新任务
+    pub refresh_task: RefreshTask,
 }
 
 #[derive(Clone)]
@@ -36,11 +38,12 @@ impl AppState {
             storage,
             active_connection: RwLock::new(None),
             consumer_manager: ConsumerManager::new(),
+            refresh_task: RefreshTask::new(),
         }
     }
 
-    /// 设置当前活跃连接，并持久化 last_active_id
-    pub fn set_active(&self, conn: Connection, password: String) {
+    /// 设置当前活跃连接，并持久化 last_active_id，同时启动后台刷新任务。
+    pub fn set_active(self: &Arc<Self>, conn: Connection, password: String) {
         let management = Arc::new(ManagementClient::new(
             &conn.management_scheme,
             &conn.host,
@@ -56,15 +59,20 @@ impl AppState {
         };
         *self.active_connection.write() = Some(active);
         let _ = self.storage.save_last_active_id(&conn.id);
+
+        self.refresh_task.stop();
+        self.refresh_task.start(Arc::downgrade(self));
     }
 
     pub fn clear_active(&self) {
+        self.refresh_task.stop();
+        self.refresh_task.set_enabled(false);
         *self.active_connection.write() = None;
         let _ = self.storage.clear_last_active_id();
     }
 
     /// 启动时尝试恢复上次活跃连接（不真正测试连通性，仅设置内存状态）
-    pub fn restore_last_active(&self) -> AppResult<Option<Connection>> {
+    pub fn restore_last_active(self: &Arc<Self>) -> AppResult<Option<Connection>> {
         let Some(id) = self.storage.load_last_active_id()? else {
             return Ok(None);
         };

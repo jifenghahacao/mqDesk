@@ -1,6 +1,8 @@
-import { useState } from "preact/hooks";
+import { useEffect, useState } from "preact/hooks";
+import { RefreshToggle } from "../components/RefreshToggle.jsx";
 import { Term } from "../components/Term.jsx";
 import { getStoredTheme, setStoredTheme } from "../lib/theme.js";
+import { setRefreshEnabled, setRefreshInterval } from "../lib/api.js";
 
 const THEME_OPTIONS = [
   { key: "light", label: "浅色" },
@@ -8,12 +10,45 @@ const THEME_OPTIONS = [
   { key: "system", label: "跟随系统" },
 ];
 
+const REFRESH_KEY = "mqdesk:refresh";
+
+function getStoredRefresh() {
+  try {
+    const raw = localStorage.getItem(REFRESH_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch {
+    // ignore
+  }
+  return { enabled: true, interval: 5000 };
+}
+
+function setStoredRefresh(config) {
+  try {
+    localStorage.setItem(REFRESH_KEY, JSON.stringify(config));
+  } catch {
+    // ignore
+  }
+}
+
 export function SettingsView({ onViewManual }) {
   const [theme, setTheme] = useState(getStoredTheme());
+  const [refresh, setRefresh] = useState(getStoredRefresh());
+
+  useEffect(() => {
+    setRefreshEnabled(refresh.enabled).catch(() => {});
+    setRefreshInterval(refresh.interval).catch(() => {});
+  }, []);
 
   function handleThemeChange(next) {
     setTheme(next);
     setStoredTheme(next);
+  }
+
+  function handleRefreshChange(next) {
+    setRefresh(next);
+    setStoredRefresh(next);
+    setRefreshEnabled(next.enabled).catch(() => {});
+    setRefreshInterval(next.interval).catch(() => {});
   }
 
   return (
@@ -41,6 +76,16 @@ export function SettingsView({ onViewManual }) {
               {opt.label}
             </button>
           ))}
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:16px;">
+        <h3>自动刷新</h3>
+        <p class="muted" style="margin-top:4px;">
+          控制后台是否周期性拉取队列状态并推送到当前页面。关闭后数字不会自动更新。
+        </p>
+        <div style="margin-top:12px;">
+          <RefreshToggle enabled={refresh.enabled} interval={refresh.interval} onChange={handleRefreshChange} />
         </div>
       </div>
 

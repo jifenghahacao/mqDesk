@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 import { HealthBadge } from "../components/Badges.jsx";
 import { QueueFormModal } from "../components/QueueFormModal.jsx";
 import { Term } from "../components/Term.jsx";
-import { extractErrorMessage, listQueues } from "../lib/api.js";
+import { VirtualTable } from "../components/VirtualTable.jsx";
+import { extractErrorMessage, listQueuesPaginated, listenQueueRefreshed } from "../lib/api.js";
 
 const TYPE_OPTIONS = [
   { value: "all", label: "全部类型" },
@@ -19,45 +20,79 @@ const HEALTH_OPTIONS = [
   { value: "idle", label: "空闲" },
 ];
 
+const PAGE_SIZE_OPTIONS = [20, 50, 100, 200];
+
 export function QueuesView({ onOpenQueue }) {
   const [queues, setQueues] = useState([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [queueType, setQueueType] = useState("all");
   const [health, setHealth] = useState("all");
   const [formOpen, setFormOpen] = useState(false);
 
-  async function reload() {
-    setLoading(true);
+  async function reload(nextPage = page, nextPageSize = pageSize, silent = false) {
+    if (silent) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     setError("");
     try {
       const filter = {
         search: search.trim(),
         queue_type: queueType,
-        health,
       };
-      const list = await listQueues(filter);
-      setQueues(list);
+      const pagination = { page: nextPage, page_size: nextPageSize };
+      const result = await listQueuesPaginated(filter, pagination);
+      setQueues(result.items);
+      setTotal(result.total);
+      setPage(result.page);
+      setPageSize(result.page_size);
     } catch (e) {
       setError(extractErrorMessage(e));
     } finally {
-      setLoading(false);
+      if (silent) {
+        setRefreshing(false);
+      } else {
+        setLoading(false);
+      }
     }
   }
 
   useEffect(() => {
-    reload();
+    reload(1, pageSize);
   }, [queueType, health]);
 
+  useEffect(() => {
+    let unlisten;
+    listenQueueRefreshed(() => {
+      reload(page, pageSize, true);
+    }).then((fn) => {
+      unlisten = fn;
+    });
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, [page, pageSize, search, queueType, health]);
+
+  const filteredQueues = useMemo(() => {
+    if (health === "all") return queues;
+    return queues.filter((q) => q.health === health);
+  }, [queues, health]);
+
   const totals = useMemo(() => {
-    const total = queues.length;
-    const ok = queues.filter((q) => q.health === "ok").length;
-    const warn = queues.filter((q) => q.health === "warn").length;
-    const danger = queues.filter((q) => q.health === "danger").length;
-    const idle = queues.filter((q) => q.health === "idle").length;
+    // 总队列数使用服务端分页总数；健康分类按当前页数据做近似展示
+    const ok = filteredQueues.filter((q) => q.health === "ok").length;
+    const warn = filteredQueues.filter((q) => q.health === "warn").length;
+    const danger = filteredQueues.filter((q) => q.health === "danger").length;
+    const idle = filteredQueues.filter((q) => q.health === "idle").length;
     return { total, ok, warn, danger, idle };
-  }, [queues]);
+  }, [filteredQueues, total]);
 
   return (
     <section class="view active" data-view="queues">
@@ -136,71 +171,121 @@ export function QueuesView({ onOpenQueue }) {
         </div>
       ) : null}
 
-      <div class="card" style="margin-top:16px;">
+      <div class="card" style="margin-top:16px; position:relative;">
+        {refreshing ? (
+          <div
+            style="position:absolute; top:12px; right:12px; z-index:1; display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted);"
+          >
+            <span class="spin" style="width:14px; height:14px; border-width:2px;" />
+            刷新中
+          </div>
+        ) : null}
         {loading ? (
           <div class="empty">加载中…</div>
-        ) : queues.length === 0 ? (
+        ) : filteredQueues.length === 0 ? (
           <div class="empty">没有匹配的队列。</div>
         ) : (
           <div class="table-wrap">
-            <table class="tbl queue-table">
-              <thead>
-                <tr>
-                  <th>队列名</th>
-                  <th>类型</th>
-                  <th>
-                    <Term termKey="ready" label="待消费" />
-                  </th>
-                  <th>
-                    <Term termKey="unacked" label="处理中" />
-                  </th>
-                  <th>总数</th>
-                  <th>
-                    <Term termKey="consumer" label="消费者" />
-                  </th>
-                  <th>流入速率</th>
-                  <th>流出速率</th>
-                  <th>健康度</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {queues.map((q) => (
-                  <tr key={q.name} class="queue-row" onClick={() => onOpenQueue(q.name)}>
-                    <td class="mono queue-name">{q.name}</td>
-                    <td>
-                      <span class="type-pill">{q.queue_type}</span>
-                    </td>
-                    <td class="mono">{q.ready.toLocaleString()}</td>
-                    <td class="mono">{q.unacked.toLocaleString()}</td>
-                    <td class="mono">{q.total.toLocaleString()}</td>
-                    <td class="mono">{q.consumers}</td>
-                    <td class="mono">{q.incoming_rate.toFixed(1)}</td>
-                    <td class="mono">{q.outgoing_rate.toFixed(1)}</td>
-                    <td>
-                      <HealthBadge status={q.health} />
-                    </td>
-                    <td>
-                      <button
-                        type="button"
-                        class="btn sm ghost"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onOpenQueue(q.name);
-                        }}
-                      >
-                        查看
-                      </button>
-                    </td>
+            <VirtualTable
+              data={filteredQueues}
+              columns={10}
+              rowHeight={48}
+              buffer={8}
+              tableClass="queue-table"
+              renderHeader={() => (
+                <thead>
+                  <tr>
+                    <th>队列名</th>
+                    <th>类型</th>
+                    <th>
+                      <Term termKey="ready" label="待消费" />
+                    </th>
+                    <th>
+                      <Term termKey="unacked" label="处理中" />
+                    </th>
+                    <th>总数</th>
+                    <th>
+                      <Term termKey="consumer" label="消费者" />
+                    </th>
+                    <th>流入速率</th>
+                    <th>流出速率</th>
+                    <th>健康度</th>
+                    <th></th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+              )}
+              renderRow={(q) => (
+                <tr key={q.name} class="queue-row" onClick={() => onOpenQueue(q.name)}>
+                  <td class="mono queue-name">{q.name}</td>
+                  <td>
+                    <span class="type-pill">{q.queue_type}</span>
+                  </td>
+                  <td class="mono">{q.ready.toLocaleString()}</td>
+                  <td class="mono">{q.unacked.toLocaleString()}</td>
+                  <td class="mono">{q.total.toLocaleString()}</td>
+                  <td class="mono">{q.consumers}</td>
+                  <td class="mono">{q.incoming_rate.toFixed(1)}</td>
+                  <td class="mono">{q.outgoing_rate.toFixed(1)}</td>
+                  <td>
+                    <HealthBadge status={q.health} />
+                  </td>
+                  <td>
+                    <button
+                      type="button"
+                      class="btn sm ghost"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenQueue(q.name);
+                      }}
+                    >
+                      查看
+                    </button>
+                  </td>
+                </tr>
+              )}
+            />
           </div>
         )}
       </div>
 
-      <QueueFormModal open={formOpen} queue={null} onClose={() => setFormOpen(false)} onSaved={reload} />
+      <div class="pagination-bar" style="margin-top:16px;">
+        <div class="pagination-info">
+          共 {total.toLocaleString()} 条 · 第 {page} 页 · 每页
+          <select
+            class="input page-size-select"
+            value={pageSize}
+            onChange={(e) => reload(1, Number(e.target.value))}
+            disabled={loading}
+          >
+            {PAGE_SIZE_OPTIONS.map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
+          </select>
+          条
+        </div>
+        <div class="pagination-actions">
+          <button
+            type="button"
+            class="btn secondary sm"
+            disabled={page <= 1 || loading}
+            onClick={() => reload(page - 1, pageSize)}
+          >
+            上一页
+          </button>
+          <button
+            type="button"
+            class="btn secondary sm"
+            disabled={page * pageSize >= total || loading}
+            onClick={() => reload(page + 1, pageSize)}
+          >
+            下一页
+          </button>
+        </div>
+      </div>
+
+      <QueueFormModal open={formOpen} queue={null} onClose={() => setFormOpen(false)} onSaved={() => reload(page, pageSize)} />
     </section>
   );
 }

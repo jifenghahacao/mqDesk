@@ -14,7 +14,7 @@
 
 use mqdesk_core::health::judge_health;
 use mqdesk_core::models::{
-    FeedFilter, HealthStatus, MessageDirection, MessageFeedItem, MessageStatus, PublishRequest,
+    FeedFilter, HealthStatus, MessageDirection, MessageFeedItem, MessageStatus, Pagination, PublishRequest,
     PublishStatus, QueueFilter,
 };
 use mqdesk_core::rabbit::{AmqpPublisher, ManagementClient};
@@ -158,8 +158,11 @@ async fn r3_r4_r6_queue_list_detail_preview_health() {
     helper.create_queue(vhost, &qname).await;
 
     // R3：列表里能找到
-    let queues = mgmt().list_queues(&QueueFilter::default()).await.expect("队列列表应成功");
-    let found = queues.iter().any(|q| q.name == qname);
+    let paginated = mgmt()
+        .list_queues(&QueueFilter::default(), &Pagination::default())
+        .await
+        .expect("队列列表应成功");
+    let found = paginated.items.iter().any(|q| q.name == qname);
     assert!(found, "新建队列 {qname} 应出现在列表中");
 
     // R6：空队列 → Idle

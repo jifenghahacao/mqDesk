@@ -1,7 +1,7 @@
 //! 连接管理命令
 
 use mqdesk_core::error::{AppError, AppResult};
-use mqdesk_core::models::{Connection, ConnectionInput, ConnectionStatus};
+use mqdesk_core::models::{Connection, ConnectionInfo, ConnectionInput, ConnectionStatus, Paginated, Pagination};
 use mqdesk_core::state::AppState;
 use mqdesk_core::storage::now_iso;
 use mqdesk_core::uuid::Uuid;
@@ -188,6 +188,20 @@ pub async fn get_connection_status(
 #[tauri::command]
 pub async fn restore_last_active(state: State<'_, Arc<AppState>>) -> AppResult<Option<Connection>> {
     state.restore_last_active()
+}
+
+/// 列出当前活跃 RabbitMQ 连接（与本地保存的连接配置区分）
+#[tauri::command]
+pub async fn list_rabbit_connections(
+    pagination: Option<Pagination>,
+    state: State<'_, Arc<AppState>>,
+) -> AppResult<Paginated<ConnectionInfo>> {
+    if state.get_active().is_none() {
+        return Err(AppError::NotConnected);
+    }
+    let pagination = pagination.unwrap_or_default();
+    let management = state.rabbit_management();
+    management.list_connections(&pagination).await
 }
 
 fn validate_input(input: &ConnectionInput) -> AppResult<()> {

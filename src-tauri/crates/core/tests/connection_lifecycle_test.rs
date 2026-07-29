@@ -45,8 +45,8 @@ fn create_save_password_then_connect_should_load_password() {
     assert_eq!(loaded_password, password, "connect_to 应能读到 create 时保存的密码");
 }
 
-#[test]
-fn app_state_set_active_then_amqp_url_should_encode_vhost() {
+#[tokio::test]
+async fn app_state_set_active_then_amqp_url_should_encode_vhost() {
     let tmp = tempdir().expect("创建临时目录失败");
     let storage = Storage::open(tmp.path().to_path_buf()).expect("打开 sled 失败");
     let state = Arc::new(AppState::with_storage(storage));

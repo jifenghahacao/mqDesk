@@ -521,3 +521,96 @@ pub struct FeedFilter {
     pub status: Option<String>,
     pub limit: Option<usize>,
 }
+
+// === 绑定 / 连接 / 信道 / 分页 / 刷新事件 ===
+
+/// 队列绑定信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BindingInfo {
+    /// 交换机名，空字符串表示默认交换机直接绑定
+    pub source: String,
+    pub vhost: String,
+    /// 目标队列名
+    pub destination: String,
+    pub destination_type: String,
+    pub routing_key: String,
+    pub arguments: serde_json::Value,
+    /// 用于删除绑定的 key
+    pub properties_key: String,
+}
+
+/// RabbitMQ 连接摘要
+#[derive(Debug, Clone, Serialize)]
+pub struct ConnectionInfo {
+    pub name: String,
+    pub peer_host: String,
+    pub peer_port: u16,
+    /// 聚合字段：host:port
+    pub peer_address: String,
+    pub protocol: String,
+    /// 连接时间戳（毫秒）
+    pub connected_at: u64,
+    /// 已连接时长（秒）
+    pub connected_seconds: u64,
+    pub channel_count: u32,
+    /// running / blocked / blocking
+    pub state: String,
+}
+
+/// RabbitMQ 信道摘要
+#[derive(Debug, Clone, Serialize)]
+pub struct ChannelInfo {
+    pub name: String,
+    pub connection_name: String,
+    pub number: u16,
+    pub consumer_count: u32,
+    pub prefetch_count: u16,
+    pub unacked: u64,
+    pub publish_rate: f64,
+    pub deliver_rate: f64,
+    pub ack_rate: f64,
+}
+
+/// 分页参数
+#[derive(Debug, Clone, Deserialize)]
+pub struct Pagination {
+    #[serde(default = "default_page")]
+    pub page: u32,
+    #[serde(default = "default_page_size")]
+    pub page_size: u32,
+}
+
+impl Default for Pagination {
+    fn default() -> Self {
+        Self {
+            page: default_page(),
+            page_size: default_page_size(),
+        }
+    }
+}
+
+fn default_page() -> u32 {
+    1
+}
+
+fn default_page_size() -> u32 {
+    50
+}
+
+/// 分页结果包装
+#[derive(Debug, Clone, Serialize)]
+pub struct Paginated<T> {
+    pub items: Vec<T>,
+    pub total: u64,
+    pub page: u32,
+    pub page_size: u32,
+}
+
+/// 自动刷新事件 payload
+#[derive(Debug, Clone, Serialize)]
+pub struct QueueRefreshEvent {
+    pub queues: Vec<QueueSummary>,
+    pub overall_health: HealthStatus,
+    pub alert_count: u64,
+    pub is_stale: bool,
+}

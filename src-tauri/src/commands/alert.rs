@@ -2,7 +2,7 @@
 
 use mqdesk_core::chrono::Utc;
 use mqdesk_core::error::{AppError, AppResult};
-use mqdesk_core::models::{QueueAlertRecord, QueueAlertRule, QueueSummary};
+use mqdesk_core::models::{Pagination, QueueAlertRecord, QueueAlertRule, QueueSummary};
 use mqdesk_core::state::AppState;
 use std::sync::Arc;
 use tauri::State;
@@ -72,9 +72,11 @@ pub async fn check_queue_alerts(state: State<'_, Arc<AppState>>) -> AppResult<Ve
     }
 
     let management = state.rabbit_management();
-    let summaries: Vec<QueueSummary> = management
-        .list_queues(&Default::default())
-        .await?
+    let paginated = management
+        .list_queues(&Default::default(), &Pagination::default())
+        .await?;
+    let summaries: Vec<QueueSummary> = paginated
+        .items
         .into_iter()
         .map(|q| q.to_summary())
         .collect();

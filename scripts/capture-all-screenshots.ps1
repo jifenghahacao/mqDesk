@@ -14,14 +14,21 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $captureScript = Join-Path $scriptDir "capture-screenshot.ps1"
 
 $shots = @(
-    @{ Name = "main-interface";      Url = "$BaseUrl/?view=overview" },
-    @{ Name = "test-main";           Url = "$BaseUrl/?view=connections&noConnection" },
-    @{ Name = "new-connection";      Url = "$BaseUrl/?view=connections&create=1" },
-    @{ Name = "overview-dashboard";  Url = "$BaseUrl/?view=overview" },
-    @{ Name = "queue-list";          Url = "$BaseUrl/?view=queues" },
-    @{ Name = "queue-detail";        Url = "$BaseUrl/?view=queue-detail&queue=order.created" },
-    @{ Name = "publish-message";     Url = "$BaseUrl/?view=messages" },
-    @{ Name = "settings-page";       Url = "$BaseUrl/?view=settings" }
+    @{ Name = "main-interface";          Url = "$BaseUrl/?view=overview" },
+    @{ Name = "test-main";               Url = "$BaseUrl/?view=connections&noConnection" },
+    @{ Name = "new-connection";          Url = "$BaseUrl/?view=connections&create=1" },
+    @{ Name = "overview-dashboard";      Url = "$BaseUrl/?view=overview" },
+    @{ Name = "queue-list";              Url = "$BaseUrl/?view=queues" },
+    @{ Name = "queue-detail";            Url = "$BaseUrl/?view=queue-detail&queue=order.created" },
+    @{ Name = "queue-detail-bindings";   Url = "$BaseUrl/?view=queue-detail&queue=order.created&tab=bindings" },
+    @{ Name = "publish-message";         Url = "$BaseUrl/?view=messages&tab=send" },
+    @{ Name = "message-inspect";         Url = "$BaseUrl/?view=messages&tab=inspect" },
+    @{ Name = "connections-channels";    Url = "$BaseUrl/?view=rabbit-connections" },
+    @{ Name = "consumer-studio";         Url = "$BaseUrl/?view=consumer-studio" },
+    @{ Name = "consumers-list";          Url = "$BaseUrl/?view=consumers" },
+    @{ Name = "nodes-view";              Url = "$BaseUrl/?view=nodes" },
+    @{ Name = "stale-banner";            Url = "$BaseUrl/?view=overview&stale=1" },
+    @{ Name = "settings-page";           Url = "$BaseUrl/?view=settings" }
 )
 
 foreach ($shot in $shots) {

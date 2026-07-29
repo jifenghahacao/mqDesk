@@ -113,6 +113,8 @@ cd src-tauri && cargo test
 - **15672**：Management HTTP API 端口（总览、队列列表、抓取预览等管控操作，由 Rust 侧 reqwest 使用）
 
 前端不直接连接 RabbitMQ，所有通信经 Tauri 命令调 Rust 后端，密钥不暴露在前端。
+页面示例
+<img width="1177" height="756" alt="image" src="https://github.com/user-attachments/assets/4312ef34-56a4-487b-86a6-e69767ac2dc7" />
 
 ## MVP 范围（按 PRD R1-R7）
 
